@@ -1165,18 +1165,6 @@ COVERSYNC
                     </div>
                     {activeOrder.notes&&<div style={S.nb}><span style={{color:"#555",fontSize:11,letterSpacing:2}}>{t.notes} </span>{activeOrder.notes}</div>}
 
-                    {/* Invoice confirm box — only show if pending */}
-                    {activeOrder.status==="pending" && (
-                      <div style={{background:"rgba(232,184,75,0.07)",border:"1px solid rgba(232,184,75,0.3)",borderRadius:10,padding:"14px",marginTop:14}}>
-                        <div style={{fontSize:10,color:"#E8B84B",letterSpacing:2,fontWeight:700,marginBottom:10}}>{t.invoiceNo.toUpperCase()}</div>
-                        <div style={{fontSize:12,color:"#666",marginBottom:10}}>{t.confirmWithInvoice}</div>
-                        <div style={{display:"flex",gap:8}}>
-                          <input style={{...S.fin,flex:1,background:"#0d0d1a"}} placeholder="e.g. 13735" value={invoiceInput} onChange={e=>setInvoiceInput(e.target.value)}/>
-                          <button style={{...S.pb,whiteSpace:"nowrap",opacity:invoiceInput.trim()?1:0.4}} onClick={()=>{ confirmWithInvoice(activeOrder.id,invoiceInput); setInvoiceInput(""); }}>✓ {lang==="zh"?"確認":"Confirm"}</button>
-                        </div>
-                      </div>
-                    )}
-
                     <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
                       {/* + Add same-client product */}
                       <button style={{...S.pb,background:"#16A34A"}} onClick={()=>{
@@ -1397,20 +1385,65 @@ COVERSYNC
 
                   {/* Shipping info display */}
                   {(activeOrder.shipNo||activeOrder.shipDate) && (
-                    <div style={S.sc}>
-                      <div style={S.sct}>{lang==="zh"?"集運資料":"Shipping Info"}</div>
-                      {activeOrder.shipNo&&<div style={S.ir}><span>{lang==="zh"?"集運單號":"Ship No."}</span><span style={{fontFamily:"monospace",fontWeight:600}}>{activeOrder.shipNo}</span></div>}
-                      {activeOrder.shipDate&&<div style={S.ir}><span>{lang==="zh"?"發貨日期":"Ship Date"}</span><span>{activeOrder.shipDate}</span></div>}
-                      {activeOrder.shipNo&&(
-                        <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
-                          <a href={`https://auspost.com.au/mypost/track/#/details/${activeOrder.shipNo}`} target="_blank" rel="noreferrer"
-                            style={{fontSize:12,color:"#4361EE",textDecoration:"none"}}>AusPost Track</a>
-                          <a href={`https://t.17track.net/en#nums=${activeOrder.shipNo}`} target="_blank" rel="noreferrer"
-                            style={{fontSize:12,color:"#E87C4B",textDecoration:"none"}}>17Track</a>
+                    {/* Editable shipping info — always shown once shipNo exists or in factship/transit */}
+                    {(activeOrder.shipNo || ["factship","transit","arrived","notified","done"].includes(activeOrder.status)) && (
+                      <div style={S.sc}>
+                        <div style={S.sct}>{lang==="zh"?"集運資料（可修改）":"Shipping Info (Editable)"}</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                          <div style={S.fi2}>
+                            <label style={S.fl2}>{lang==="zh"?"集運單號":"Shipping No."}</label>
+                            <input style={S.fin} placeholder="e.g. 1234567890"
+                              value={activeOrder.shipNo||""}
+                              onChange={async e=>{
+                                const val=e.target.value;
+                                setOrders(p=>p.map(o=>o.id===activeOrder.id?{...o,shipNo:val}:o));
+                                setActiveOrder(a=>({...a,shipNo:val}));
+                                await sb.upsert("orders",activeOrder.id,{...activeOrder,shipNo:val});
+                              }}/>
+                          </div>
+                          <div style={S.fi2}>
+                            <label style={S.fl2}>{lang==="zh"?"發貨日期":"Ship Date"}</label>
+                            <input type="date" style={S.fin}
+                              value={activeOrder.shipDate||""}
+                              onChange={async e=>{
+                                const val=e.target.value;
+                                setOrders(p=>p.map(o=>o.id===activeOrder.id?{...o,shipDate:val}:o));
+                                setActiveOrder(a=>({...a,shipDate:val}));
+                                await sb.upsert("orders",activeOrder.id,{...activeOrder,shipDate:val});
+                              }}/>
+                          </div>
+                          {activeOrder.shipNo&&(
+                            <div style={{display:"flex",gap:8,marginTop:4}}>
+                              <a href={`https://auspost.com.au/mypost/track/#/details/${activeOrder.shipNo}`} target="_blank" rel="noreferrer"
+                                style={{flex:1,textAlign:"center",padding:"6px",background:"#EEF1FF",borderRadius:6,color:"#4361EE",fontSize:12,fontWeight:600,textDecoration:"none",border:"1px solid #C5CEFF"}}>
+                                AusPost Track
+                              </a>
+                              <a href={`https://t.17track.net/en#nums=${activeOrder.shipNo}`} target="_blank" rel="noreferrer"
+                                style={{flex:1,textAlign:"center",padding:"6px",background:"#FFF8EE",borderRadius:6,color:"#E87C4B",fontSize:12,fontWeight:600,textDecoration:"none",border:"1px solid #FFD5A0"}}>
+                                17Track
+                              </a>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    )}
+
+                    {/* Undo status — go back one step */}
+                    {!["pending","done"].includes(activeOrder.status) && (
+                      <div style={S.sc}>
+                        <div style={S.sct}>{lang==="zh"?"狀態修正":"Correct Status"}</div>
+                        <button style={{...S.gb,width:"100%",fontSize:12}} onClick={async()=>{
+                          const flow = ["pending","confirmed","producing","factship","transit","arrived","notified","done"];
+                          const cur = flow.indexOf(activeOrder.status);
+                          const prev = cur>0 ? flow[cur-1] : "pending";
+                          if(window.confirm(lang==="zh"?`確定返回「${getSt(prev).label}」狀態？`:`Revert to "${getSt(prev).label}"?`)){
+                            await updateOSt(activeOrder.id, prev);
+                          }
+                        }}>
+                          {lang==="zh"?"返回上一個狀態":"Revert to Previous Status"}
+                        </button>
+                      </div>
+                    )}
 
                   <button style={S.db} onClick={()=>{if(confirm("Delete?"))delOrder(activeOrder.id);}}>{t.deleteOrder}</button>
                 </div>
