@@ -89,7 +89,8 @@ const T = {
     printQuote:"列印報價單", printConfirm:"列印確認單",
     printPO:"列印採購單", whatsapp:"WhatsApp 通知", copied:"已複製！",
     stNew:"新訂單", stPending:"待確認", stConfirmed:"已確認", stProducing:"生產中",
-    stFactShip:"工廠發貨", stTransit:"已集運發貨", stArrived:"到貨", stDone:"完成",
+    stFactShip:"已發貨到集運", stTransit:"集運已發貨", stArrived:"到貨",
+    stNotified:"已通知客人", stDone:"完成",
     stQC:"QC檢查", stReady:"待交收", stDelivered:"已完成", stIssue:"有問題",
     bsDraft:"草稿", bsSent:"已發出", bsPending:"待確認", bsConfirmed:"已確認", bsProducing:"生產中",
     bsShipped:"發貨", bsFactShip:"工廠發貨", bsTransit:"已集運發貨", bsArrived:"到貨", bsShelved:"已上架", bsDone:"完成", bsIssue:"有問題",
@@ -141,7 +142,8 @@ const T = {
     printQuote:"Print Quote", printConfirm:"Print Confirmation",
     printPO:"Print PO", whatsapp:"WhatsApp", copied:"Copied!",
     stNew:"New", stPending:"Pending", stConfirmed:"Confirmed", stProducing:"In Production",
-    stFactShip:"Factory Shipped", stTransit:"In Transit", stArrived:"Arrived", stDone:"Completed",
+    stFactShip:"Shipped to Forwarder", stTransit:"Forwarder Shipped", stArrived:"Arrived",
+    stNotified:"Client Notified", stDone:"Completed",
     stQC:"QC Check", stReady:"Ready", stDelivered:"Delivered", stIssue:"Issue",
     bsDraft:"Draft", bsSent:"Sent", bsPending:"Pending", bsConfirmed:"Confirmed", bsProducing:"In Production",
     bsShipped:"Shipped", bsFactShip:"Factory Shipped", bsTransit:"In Transit", bsArrived:"Arrived", bsShelved:"Shelved", bsDone:"Completed", bsIssue:"Issue",
@@ -173,6 +175,7 @@ const getOrderStatuses = (t) => [
   { key:"factship",  color:"#4BB5E8", icon:"◉", label:t.stFactShip },
   { key:"transit",   color:"#E87C4B", icon:"◑", label:t.stTransit },
   { key:"arrived",   color:"#16A34A", icon:"●", label:t.stArrived },
+  { key:"notified",  color:"#0EA5E9", icon:"◎", label:t.stNotified },
   { key:"done",      color:"#aaa",    icon:"✓", label:t.stDone },
   { key:"issue",     color:"#E84B4B", icon:"⚠", label:t.stIssue },
 ];
@@ -776,19 +779,45 @@ export default function App() {
     return ms&&mc&&mp&&mq;
   });
 
+  const nextOrderNum = () => {
+    const nums = orders.map(o=>{
+      const base = o.groupId || o.id;
+      const n = parseInt(base.replace(/[^0-9]/g,""));
+      return isNaN(n)?0:n;
+    });
+    const max = nums.length>0?Math.max(...nums):0;
+    return String(max+1).padStart(3,"0");
+  };
+
   const saveOrder = async () => {
     let newId;
-    if (oForm.groupId?.trim()) {
-      const base = oForm.groupId.trim().toUpperCase();
-      const siblings = orders.filter(o=>o.groupId===base||o.id===base||o.id.startsWith(base));
-      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-      if (siblings.length===0) { newId = base; }
-      else { let idx=0; while(orders.find(o=>o.id===base+letters[idx])) idx++; newId = base+letters[Math.min(idx,25)]; }
-    } else { newId = uid("ORD"); }
-    const o = { ...oForm, id:newId, groupId:oForm.groupId?.trim()||newId, deposit:+oForm.deposit||0, total:+oForm.total||0, created:NOW, status:"pending", reorder:false };
-    setOrders(p=>[o,...p]); setOrderView("list"); setOForm(emptyOrder);
+    const groupBase = oForm.groupId?.trim();
+    if (groupBase) {
+      // Sub-order: find siblings and assign next letter
+      const siblings = orders.filter(o=>o.groupId===groupBase);
+      const letters = "BCDEFGHIJKLMNOPQRSTUVWXYZ";
+      if (siblings.length===0) {
+        newId = groupBase; // first item = no letter
+      } else if (siblings.length===1 && siblings[0].id===groupBase) {
+        // rename first to 001A, new one is 001B
+        const firstUpdated = {...siblings[0], id:groupBase+"A"};
+        setOrders(p=>p.map(o=>o.id===groupBase?firstUpdated:o));
+        await sb.upsert("orders", groupBase+"A", firstUpdated);
+        await sb.delete("orders", groupBase);
+        newId = groupBase+"B";
+      } else {
+        let idx=0;
+        while(orders.find(o=>o.id===groupBase+letters[idx])) idx++;
+        newId = groupBase+letters[Math.min(idx,24)];
+      }
+    } else {
+      newId = nextOrderNum();
+    }
+    const o = { ...oForm, id:newId, groupId:groupBase||newId, deposit:+oForm.deposit||0, total:+oForm.total||0, created:NOW, status:"pending", reorder:false,
+      shipNo:"", shipDate:"", productionDoneDate:"", completedDate:"", contactedClient:false, issueNote:"", photos:[] };
+    setOrders(p=>[o,...p]); setOrderView("list"); setOForm({...emptyOrder});
     await sb.upsert("orders", newId, o);
-    flash("✓ "+newId);
+    flash("✓ Order "+newId+" created");
   };
 
   const updateOSt = async (id,st) => {
@@ -990,7 +1019,7 @@ COVERSYNC
                     <div style={{...S.td,flex:1.3}}>
                       <span style={S.oid}>{o.id}</span>
                       {o.reorder&&<span style={S.rtag}>{t.reorderTag}</span>}
-                      {o.groupId&&o.groupId!==o.id&&<span style={{background:"#EEF1FF",color:"#4361EE",border:"1px solid #C5CEFF",borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:700,marginLeft:4}}>G:{o.groupId}</span>}
+                      {o.groupId&&o.groupId!==o.id&&<span style={{background:"#EEF1FF",color:"#4361EE",border:"1px solid #C5CEFF",borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:700,marginLeft:4}}>#{o.groupId}</span>}
                     </div>
                     <div style={{...S.td,flex:.9,fontSize:12}}><span style={S.ptBadge}>{ptLabel(o.productType)}</span></div>
                     <div style={{...S.td,flex:.4,fontSize:13,color:"#666"}}>{o.channel==="store"?"店內":"網上"}</div>
@@ -1025,20 +1054,23 @@ COVERSYNC
                 {/* Sub-order / Group */}
                 <div style={{...S.fs,background:"#F0F4FF",borderRadius:10,padding:"14px",border:"1px solid #C5CEFF"}}>
                   <div style={{...S.fst,color:"#4361EE"}}>{lang==="zh"?"同一客人多件產品 — Sub-order":"Same Client Multiple Products — Sub-order"}</div>
+                  <div style={{fontSize:12,color:"#666",marginBottom:10}}>{lang==="zh"?"如客人訂多件產品，填入已有訂單號，系統自動加 B、C…":"If client orders multiple products, enter existing order no. System auto-adds B, C…"}</div>
                   <div style={{display:"flex",gap:12,alignItems:"flex-end"}}>
                     <div style={{...S.fi2,flex:1}}>
-                      <label style={S.fl2}>{lang==="zh"?"訂單組號（如：112）留空則自動生成":"Group ID (e.g. 112) — leave blank to auto-generate"}</label>
-                      <input style={S.fin} placeholder={lang==="zh"?"例：112（第二件會自動變 112B）":"e.g. 112 (next item auto-becomes 112B)"} value={oForm.groupId||""} onChange={e=>setOForm(p=>({...p,groupId:e.target.value}))}/>
+                      <label style={S.fl2}>{lang==="zh"?"現有訂單號（留空自動生成新號）":"Existing Order No. (leave blank to auto-generate)"}</label>
+                      <input style={S.fin} placeholder={lang==="zh"?"例：001（第二件自動變 001B）":"e.g. 001 (next item auto-becomes 001B)"}
+                        value={oForm.groupId||""} onChange={e=>setOForm(p=>({...p,groupId:e.target.value}))}/>
                     </div>
                     {oForm.groupId?.trim() && (
                       <div style={{fontSize:12,color:"#4361EE",background:"#EEF1FF",border:"1px solid #C5CEFF",borderRadius:7,padding:"8px 12px",whiteSpace:"nowrap"}}>
                         {(()=>{
-                          const base = oForm.groupId.trim().toUpperCase();
-                          const siblings = orders.filter(o=>o.groupId===base||o.id===base||o.id.startsWith(base));
-                          const letters="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                          const base=oForm.groupId.trim();
+                          const siblings=orders.filter(o=>o.groupId===base);
+                          const letters="BCDEFGHIJKLMNOPQRSTUVWXYZ";
                           if(siblings.length===0) return `→ ${base}`;
+                          if(siblings.length===1&&siblings[0].id===base) return `→ ${base}A / ${base}B`;
                           let idx=0; while(orders.find(o=>o.id===base+letters[idx])) idx++;
-                          return `→ ${base}${letters[Math.min(idx,25)]}`;
+                          return `→ ${base}${letters[Math.min(idx,24)]}`;
                         })()}
                       </div>
                     )}
@@ -1097,7 +1129,24 @@ COVERSYNC
                           <span style={{color:"#4361EE",fontSize:12,fontWeight:600,background:"#EEF1FF",borderRadius:4,padding:"2px 7px"}}>{activeOrder.channel==="store"?"店內":"網上"}</span>
                           <span style={{color:"#555",fontSize:14}}>{activeOrder.phone}</span>
                         </div>
-                        {activeOrder.address&&<div style={{fontSize:13,color:"#555",marginTop:4}}>📍 {activeOrder.address}</div>}
+                        {activeOrder.address&&<div style={{fontSize:13,color:"#555",marginTop:4}}>{activeOrder.address}</div>}
+                        {/* Sibling orders same group */}
+                        {(()=>{
+                          const grp = activeOrder.groupId||activeOrder.id;
+                          const siblings = orders.filter(o=>( o.groupId===grp||o.id===grp||o.id.startsWith(grp) )&&o.id!==activeOrder.id);
+                          if(!siblings.length) return null;
+                          return(
+                            <div style={{marginTop:8,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                              <span style={{fontSize:11,color:"#888"}}>{lang==="zh"?"同單:":"Same order:"}</span>
+                              {siblings.map(s=>(
+                                <button key={s.id} onClick={()=>setActiveOrder(s)}
+                                  style={{fontSize:11,fontWeight:700,color:"#4361EE",background:"#EEF1FF",border:"1px solid #C5CEFF",borderRadius:5,padding:"2px 8px",cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>
+                                  {s.id} — {ptLabel(s.productType)}
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </div>
                       {(()=>{const st=getSt(activeOrder.status);return <div style={{...S.bsb,background:st.color+"22",color:st.color,borderColor:st.color+"55"}}>{st.icon} {st.label}</div>;})()}
                     </div>
@@ -1129,6 +1178,28 @@ COVERSYNC
                     )}
 
                     <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
+                      {/* + Add same-client product */}
+                      <button style={{...S.pb,background:"#16A34A"}} onClick={()=>{
+                        setOForm({
+                          ...emptyOrder,
+                          // Copy client & car info
+                          client: activeOrder.client,
+                          phone: activeOrder.phone,
+                          email: activeOrder.email||"",
+                          address: activeOrder.address||"",
+                          channel: activeOrder.channel,
+                          carMake: activeOrder.carMake,
+                          carYear: activeOrder.carYear,
+                          carModel: activeOrder.carModel,
+                          invoiceNo: activeOrder.invoiceNo||"",
+                          // Set groupId to link sub-orders
+                          groupId: activeOrder.groupId||activeOrder.id,
+                        });
+                        setOrderView("new");
+                        flash(lang==="zh"?"客人資料已複製，請選擇新產品":"Client info copied — select new product");
+                      }}>
+                        + {lang==="zh"?"加同客產品":"Add Product (Same Client)"}
+                      </button>
                       <button style={S.docBtn} onClick={()=>openPrint(genCustomerDoc(activeOrder,"quote"))}>{t.printQuote}</button>
                       <button style={S.docBtn} onClick={()=>openPrint(genCustomerDoc(activeOrder,"confirm"))}>{t.printConfirm}</button>
                       <button style={{...S.docBtn,background:"rgba(37,211,102,0.1)",borderColor:"rgba(37,211,102,0.35)",color:"#25d366"}} onClick={()=>setShowWA(w=>!w)}>{t.whatsapp}</button>
@@ -1153,27 +1224,194 @@ COVERSYNC
                   )}
                 </div>
                 <div>
-                  <div style={S.sc}><div style={S.sct}>{t.updateStatus}</div>
-                    <div style={{display:"flex",flexDirection:"column",gap:7}}>
-                      {ORDER_STATUSES.map(s=>{const on=activeOrder.status===s.key;return(
-                        <button key={s.key} className="status-btn" style={{...S.sfb,background:on?s.color:"transparent",color:on?"#000":s.color,borderColor:s.color+(on?"":"33"),fontWeight:on?700:400}} onClick={()=>updateOSt(activeOrder.id,s.key)}>
-                          <span>{s.icon}</span>{s.label}{on&&" ◀"}
+                  {/* Step-by-step status flow */}
+                  <div style={S.sc}>
+                    <div style={S.sct}>{lang==="zh"?"訂單進度":"Order Progress"}</div>
+
+                    {/* PENDING → CONFIRMED: Enter invoice */}
+                    {activeOrder.status==="pending" && (
+                      <div style={S.stepBox}>
+                        <div style={S.stepLabel}>{lang==="zh"?"填入 Invoice No. 確認訂單":"Enter Invoice No. to confirm"}</div>
+                        <div style={{display:"flex",gap:8,marginTop:8}}>
+                          <input style={{...S.fin,flex:1}} placeholder="e.g. 13735" value={invoiceInput} onChange={e=>setInvoiceInput(e.target.value)}/>
+                          <button style={{...S.pb,whiteSpace:"nowrap",opacity:invoiceInput.trim()?1:0.4}} onClick={()=>{confirmWithInvoice(activeOrder.id,invoiceInput);setInvoiceInput("");}}>
+                            {lang==="zh"?"確認":"Confirm"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* CONFIRMED → PRODUCING: Start production */}
+                    {activeOrder.status==="confirmed" && (
+                      <div style={S.stepBox}>
+                        <div style={S.stepLabel}>{lang==="zh"?"按下開始生產":"Click to start production"}</div>
+                        <button style={{...S.pb,width:"100%",marginTop:8}} onClick={()=>updateOSt(activeOrder.id,"producing")}>
+                          {lang==="zh"?"開始生產":"Start Production"}
                         </button>
-                      );})}
+                      </div>
+                    )}
+
+                    {/* PRODUCING → FACTSHIP: Enter production done date */}
+                    {activeOrder.status==="producing" && (
+                      <div style={S.stepBox}>
+                        <div style={S.stepLabel}>{lang==="zh"?"完成生產日期":"Production Completed Date"}</div>
+                        <input type="date" style={{...S.fin,marginTop:8,width:"100%"}}
+                          value={activeOrder.productionDoneDate||""}
+                          onChange={async e=>{
+                            const val=e.target.value;
+                            setOrders(p=>p.map(o=>o.id===activeOrder.id?{...o,productionDoneDate:val}:o));
+                            setActiveOrder(a=>({...a,productionDoneDate:val}));
+                            await sb.upsert("orders",activeOrder.id,{...activeOrder,productionDoneDate:val});
+                          }}/>
+                        {activeOrder.productionDoneDate && (
+                          <button style={{...S.pb,width:"100%",marginTop:8}} onClick={()=>updateOSt(activeOrder.id,"factship")}>
+                            {lang==="zh"?"確認已發貨到集運":"Confirm Shipped to Forwarder"}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* FACTSHIP → TRANSIT: Enter shipping no + date */}
+                    {activeOrder.status==="factship" && (
+                      <div style={S.stepBox}>
+                        <div style={S.stepLabel}>{lang==="zh"?"集運單號 + 發貨日期":"Shipping No. + Ship Date"}</div>
+                        <input style={{...S.fin,marginTop:8,width:"100%"}} placeholder={lang==="zh"?"集運單號 e.g. 1234567890":"Shipping No. e.g. 1234567890"}
+                          value={activeOrder.shipNo||""}
+                          onChange={async e=>{
+                            const val=e.target.value;
+                            setOrders(p=>p.map(o=>o.id===activeOrder.id?{...o,shipNo:val}:o));
+                            setActiveOrder(a=>({...a,shipNo:val}));
+                            await sb.upsert("orders",activeOrder.id,{...activeOrder,shipNo:val});
+                          }}/>
+                        <input type="date" style={{...S.fin,marginTop:8,width:"100%"}}
+                          value={activeOrder.shipDate||""}
+                          onChange={async e=>{
+                            const val=e.target.value;
+                            setOrders(p=>p.map(o=>o.id===activeOrder.id?{...o,shipDate:val}:o));
+                            setActiveOrder(a=>({...a,shipDate:val}));
+                            await sb.upsert("orders",activeOrder.id,{...activeOrder,shipDate:val});
+                          }}/>
+                        {activeOrder.shipNo && activeOrder.shipDate && (
+                          <button style={{...S.pb,width:"100%",marginTop:8}} onClick={()=>updateOSt(activeOrder.id,"transit")}>
+                            {lang==="zh"?"確認集運已發貨":"Confirm Forwarder Shipped"}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* TRANSIT: Show tracking links */}
+                    {activeOrder.status==="transit" && activeOrder.shipNo && (
+                      <div style={S.stepBox}>
+                        <div style={S.stepLabel}>{lang==="zh"?"追蹤包裹":"Track Shipment"}</div>
+                        <a href={`https://auspost.com.au/mypost/track/#/details/${activeOrder.shipNo}`} target="_blank" rel="noreferrer"
+                          style={{display:"block",marginTop:8,padding:"8px 12px",background:"#EEF1FF",borderRadius:7,color:"#4361EE",fontSize:13,fontWeight:600,textDecoration:"none",border:"1px solid #C5CEFF"}}>
+                          Australia Post Tracking
+                        </a>
+                        <a href={`https://t.17track.net/en#nums=${activeOrder.shipNo}`} target="_blank" rel="noreferrer"
+                          style={{display:"block",marginTop:6,padding:"8px 12px",background:"#FFF8EE",borderRadius:7,color:"#E87C4B",fontSize:13,fontWeight:600,textDecoration:"none",border:"1px solid #FFD5A0"}}>
+                          17Track (Other Carriers)
+                        </a>
+                        <button style={{...S.pb,width:"100%",marginTop:10}} onClick={()=>updateOSt(activeOrder.id,"arrived")}>
+                          {lang==="zh"?"確認已到貨":"Confirm Arrived"}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* ARRIVED → NOTIFIED: Contact client */}
+                    {activeOrder.status==="arrived" && (
+                      <div style={S.stepBox}>
+                        <div style={S.stepLabel}>{lang==="zh"?"通知客人":"Notify Client"}</div>
+                        <p style={{fontSize:12,color:"#888",marginTop:6}}>{lang==="zh"?"請聯絡客人後按下確認":"Contact the client then confirm below"}</p>
+                        <button style={{...S.pb,width:"100%",marginTop:8}} onClick={()=>updateOSt(activeOrder.id,"notified")}>
+                          {lang==="zh"?"已聯絡客人":"Client Contacted"}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* NOTIFIED → DONE: Enter completion date */}
+                    {activeOrder.status==="notified" && (
+                      <div style={S.stepBox}>
+                        <div style={S.stepLabel}>{lang==="zh"?"完成日期":"Completion Date"}</div>
+                        <input type="date" style={{...S.fin,marginTop:8,width:"100%"}}
+                          value={activeOrder.completedDate||""}
+                          onChange={async e=>{
+                            const val=e.target.value;
+                            setOrders(p=>p.map(o=>o.id===activeOrder.id?{...o,completedDate:val}:o));
+                            setActiveOrder(a=>({...a,completedDate:val}));
+                            await sb.upsert("orders",activeOrder.id,{...activeOrder,completedDate:val});
+                          }}/>
+                        {activeOrder.completedDate && (
+                          <button style={{...S.pb,width:"100%",marginTop:8}} onClick={()=>updateOSt(activeOrder.id,"done")}>
+                            {lang==="zh"?"確認完成":"Mark Completed"}
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* DONE */}
+                    {activeOrder.status==="done" && (
+                      <div style={{...S.stepBox,background:"#F0FDF4",borderColor:"#86EFAC"}}>
+                        <div style={{fontWeight:700,color:"#16A34A",fontSize:14}}>{lang==="zh"?"訂單已完成":"Order Completed"}</div>
+                        {activeOrder.completedDate&&<div style={{fontSize:12,color:"#888",marginTop:4}}>{lang==="zh"?"完成日期":"Completed"}: {activeOrder.completedDate}</div>}
+                      </div>
+                    )}
+
+                    {/* ISSUE: show note */}
+                    {activeOrder.status==="issue" && (
+                      <div style={{...S.stepBox,background:"#FFF5F5",borderColor:"#FFCCCC"}}>
+                        <div style={{fontWeight:700,color:"#E84B4B",marginBottom:6}}>{lang==="zh"?"問題記錄":"Issue Note"}</div>
+                        <textarea style={{...S.fin,minHeight:60,resize:"vertical",width:"100%"}}
+                          placeholder={lang==="zh"?"填寫問題詳情…":"Describe the issue…"}
+                          value={activeOrder.issueNote||""}
+                          onChange={async e=>{
+                            const val=e.target.value;
+                            setOrders(p=>p.map(o=>o.id===activeOrder.id?{...o,issueNote:val}:o));
+                            setActiveOrder(a=>({...a,issueNote:val}));
+                            await sb.upsert("orders",activeOrder.id,{...activeOrder,issueNote:val});
+                          }}/>
+                        <button style={{...S.reorderBtn,width:"100%",marginTop:8}} onClick={()=>doReorder(activeOrder)}>{t.createReorder}</button>
+                      </div>
+                    )}
+
+                    {/* Mark as issue button (always visible except done/issue) */}
+                    {!["done","issue","pending"].includes(activeOrder.status) && (
+                      <button style={{...S.db,marginTop:12}} onClick={()=>updateOSt(activeOrder.id,"issue")}>
+                        {lang==="zh"?"標記有問題":"Mark as Issue"}
+                      </button>
+                    )}
+
+                    {/* Progress dots */}
+                    <div style={{marginTop:16}}>
+                      <div style={{fontSize:9,color:"#888",letterSpacing:2,fontWeight:700,marginBottom:10}}>{t.progress}</div>
+                      <div style={{display:"flex",flexDirection:"column"}}>
+                        {ORDER_STATUSES.filter(s=>s.key!=="issue").map((s,i,arr)=>{
+                          const cur=arr.findIndex(x=>x.key===activeOrder.status); const done=i<=cur&&activeOrder.status!=="issue";
+                          return(<div key={s.key} style={S.pi}>
+                            <div style={{...S.pd,background:done?s.color:"#E8ECF4",borderColor:done?s.color:"#E8ECF4",boxShadow:done?`0 0 6px ${s.color}55`:"none"}}/>
+                            {i<arr.length-1&&<div style={{...S.pc,background:done&&i<cur?s.color:"#E8ECF4"}}/>}
+                            <span style={{...S.pl,color:done?s.color:"#bbb",fontSize:10}}>{s.label}</span>
+                          </div>);})}
+                      </div>
                     </div>
                   </div>
-                  <div style={S.sc}><div style={S.sct}>{t.progress}</div>
-                    <div style={{display:"flex",flexDirection:"column"}}>
-                      {ORDER_STATUSES.filter(s=>s.key!=="issue").map((s,i,arr)=>{
-                        const cur=arr.findIndex(x=>x.key===activeOrder.status); const done=i<=cur&&activeOrder.status!=="issue";
-                        return(<div key={s.key} style={S.pi}>
-                          <div style={{...S.pd,background:done?s.color:"#E8ECF4",borderColor:done?s.color:"#E8ECF4",boxShadow:done?`0 0 8px ${s.color}55`:"none"}}/>
-                          {i<arr.length-1&&<div style={{...S.pc,background:done&&i<cur?s.color:"#E8ECF4"}}/>}
-                          <span style={{...S.pl,color:done?s.color:"#bbb"}}>{s.label}</span>
-                        </div>);
-                      })}
+
+                  {/* Shipping info display */}
+                  {(activeOrder.shipNo||activeOrder.shipDate) && (
+                    <div style={S.sc}>
+                      <div style={S.sct}>{lang==="zh"?"集運資料":"Shipping Info"}</div>
+                      {activeOrder.shipNo&&<div style={S.ir}><span>{lang==="zh"?"集運單號":"Ship No."}</span><span style={{fontFamily:"monospace",fontWeight:600}}>{activeOrder.shipNo}</span></div>}
+                      {activeOrder.shipDate&&<div style={S.ir}><span>{lang==="zh"?"發貨日期":"Ship Date"}</span><span>{activeOrder.shipDate}</span></div>}
+                      {activeOrder.shipNo&&(
+                        <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
+                          <a href={`https://auspost.com.au/mypost/track/#/details/${activeOrder.shipNo}`} target="_blank" rel="noreferrer"
+                            style={{fontSize:12,color:"#4361EE",textDecoration:"none"}}>AusPost Track</a>
+                          <a href={`https://t.17track.net/en#nums=${activeOrder.shipNo}`} target="_blank" rel="noreferrer"
+                            style={{fontSize:12,color:"#E87C4B",textDecoration:"none"}}>17Track</a>
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
+
                   <button style={S.db} onClick={()=>{if(confirm("Delete?"))delOrder(activeOrder.id);}}>{t.deleteOrder}</button>
                 </div>
               </div>
@@ -1676,4 +1914,6 @@ const S = {
   settingsList:{display:"flex",flexDirection:"column",gap:6,maxHeight:200,overflowY:"auto",marginBottom:8},
   settingsItem:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",background:"#F8F9FF",borderRadius:7,border:"1px solid #E8ECF4"},
   removeBtn:{background:"#FFF0F0",border:"1px solid #FFCCCC",color:"#CC3333",borderRadius:5,padding:"3px 9px",fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif",flexShrink:0},
+  stepBox:{background:"#F8F9FF",border:"1px solid #E8ECF4",borderRadius:10,padding:"14px",marginBottom:12},
+  stepLabel:{fontSize:11,fontWeight:700,color:"#4361EE",letterSpacing:1,textTransform:"uppercase"},
 };
