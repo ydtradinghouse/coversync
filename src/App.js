@@ -1383,10 +1383,8 @@ COVERSYNC
                     </div>
                   </div>
 
-                  {/* Shipping info display */}
-                  {(activeOrder.shipNo||activeOrder.shipDate) && (
-                    {/* Editable shipping info — always shown once shipNo exists or in factship/transit */}
-                    {(activeOrder.shipNo || ["factship","transit","arrived","notified","done"].includes(activeOrder.status)) && (
+                  {/* Editable shipping info — always shown once shipNo exists or in factship/transit */}
+                  {(activeOrder.shipNo || ["factship","transit","arrived","notified","done"].includes(activeOrder.status)) && (
                       <div style={S.sc}>
                         <div style={S.sct}>{lang==="zh"?"集運資料（可修改）":"Shipping Info (Editable)"}</div>
                         <div style={{display:"flex",flexDirection:"column",gap:8}}>
