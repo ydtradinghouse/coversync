@@ -650,7 +650,7 @@ function SpecSummary({ order, lang, t }) {
 // ═══════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════
-const APP_PASSWORD = "yd2025"; // Change this to your desired password
+const APP_PASSWORD = "yd2019"; // Change this to your desired password
 
 export default function App() {
   const [lang, setLang] = useState("zh");
