@@ -169,12 +169,12 @@ const DEFAULT_PRODUCT_TYPES = [
 // CONSTANTS
 // ═══════════════════════════════════════════════════════
 const getOrderStatuses = (t) => [
-  { key:"pending",   color:"#888",    icon:"○", label:t.stPending },
+  { key:"pending",   color:"#AAAAAA", icon:"○", label:t.stPending },
   { key:"confirmed", color:"#4BE8A0", icon:"✓", label:t.stConfirmed },
-  { key:"producing", color:"#B44BE8", icon:"◈", label:t.stProducing },
-  { key:"factship",  color:"#4BB5E8", icon:"◉", label:t.stFactShip },
-  { key:"transit",   color:"#E87C4B", icon:"◑", label:t.stTransit },
-  { key:"arrived",   color:"#16A34A", icon:"●", label:t.stArrived },
+  { key:"producing", color:"#F59E0B", icon:"◈", label:t.stProducing },
+  { key:"factship",  color:"#F59E0B", icon:"◉", label:t.stFactShip },
+  { key:"transit",   color:"#F59E0B", icon:"◑", label:t.stTransit },
+  { key:"arrived",   color:"#F59E0B", icon:"●", label:t.stArrived },
   { key:"notified",  color:"#0EA5E9", icon:"◎", label:t.stNotified },
   { key:"done",      color:"#aaa",    icon:"✓", label:t.stDone },
   { key:"issue",     color:"#E84B4B", icon:"⚠", label:t.stIssue },
@@ -650,7 +650,7 @@ function SpecSummary({ order, lang, t }) {
 // ═══════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════
-const APP_PASSWORD = "yd2019"; // Change this to your desired password
+const APP_PASSWORD = "yd2019";
 
 export default function App() {
   const [lang, setLang] = useState("zh");
@@ -723,7 +723,7 @@ export default function App() {
   const [orderQ, setOrderQ]             = useState("");
   const [waLang, setWaLang]             = useState("zh");
   const [showWA, setShowWA]             = useState(false);
-  const [invoiceInput, setInvoiceInput] = useState("");
+  const [specPopup, setSpecPopup] = useState(null); // order id for spec popup
   const emptyOrder = { productType:"seat", channel:"store", client:"", phone:"", email:"", carMake:CAR_MAKES[0], carYear:"", carModel:"", seats:"", material:"", color:"", colorHistory:[], mat2Material:"", mat2Color:"", layers:"", stitching:"", embroidery:"", screenSize:"", compatible:"", rearCam:"", steerDiam:"", bootWaterproof:"", bootFullWrap:"", itemName:"", specification:"", shieldType:"", deposit:"", total:"", due:"", orderDate:NOW, customId:"", address:"", notes:"", invoiceNo:"", groupId:"", designType:"ORIGINAL", customDesignNote:"" };
   const [oForm, setOForm] = useState(emptyOrder);
 
@@ -741,6 +741,7 @@ export default function App() {
   const [stockAlerts, setStockAlerts] = useState([]);
   const [selAlerts, setSelAlerts]     = useState([]);
   const [showAlertForm, setShowAlertForm] = useState(false);
+  const [editingAlert, setEditingAlert]   = useState(null);
   const emptyAlert = { productType:"seat", carMake:CAR_MAKES[0], carYear:"", carModel:"", material:"", color:"", suggestQty:"", reason:"", raisedBy:"", supplier:"", orderStatus:"pending", orderDate:"" };
   const [aForm, setAForm] = useState(emptyAlert);
 
@@ -1030,6 +1031,14 @@ COVERSYNC
     flash(lang==="zh"?"✓ 缺貨提醒已建立":"✓ Alert created");
   };
 
+  const saveEditAlert = async () => {
+    const updated = {...editingAlert};
+    setStockAlerts(p=>p.map(a=>a.id===updated.id?updated:a));
+    setEditingAlert(null);
+    await sb.upsert("stock_alerts",updated.id,updated);
+    flash(lang==="zh"?"✓ 提醒已更新":"✓ Alert updated");
+  };
+
   const delAlert = async (id) => {
     setStockAlerts(p=>p.filter(a=>a.id!==id)); setSelAlerts(p=>p.filter(x=>x!==id));
     await sb.delete("stock_alerts",id);
@@ -1301,30 +1310,43 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                 </div>
               </div>
               <div style={S.tw}>
-                <div style={S.th2}>{["ID","TYPE","CH","CLIENT","CAR","STATUS","DUE","TOTAL"].map((h,i)=><div key={i} style={{...S.th,flex:[1.3,.9,.4,1,1.5,.9,.8,.8][i]}}>{h}</div>)}</div>
+                <div style={S.th2}>{["ID","INV NO","TYPE","CLIENT","CAR / SPEC","STATUS","ETD","TOTAL"].map((h,i)=><div key={i} style={{...S.th,flex:[1.2,.8,.8,1,2,.9,.9,.7][i]}}>{h}</div>)}</div>
                 {filteredOrders.map(o=>{const st=getSt(o.status);return(
                   <div key={o.id} className="trow" style={S.tr} onClick={()=>{setActiveOrder(o);setOrderView("detail");}}>
-                    <div style={{...S.td,flex:1.3}}>
+                    <div style={{...S.td,flex:1.2}}>
                       <span style={S.oid}>{o.id}</span>
                       {o.reorder&&<span style={S.rtag}>{t.reorderTag}</span>}
                       {o.groupId&&o.groupId!==o.id&&<span style={{background:"#EEF1FF",color:"#4361EE",border:"1px solid #C5CEFF",borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:700,marginLeft:4}}>#{o.groupId}</span>}
                     </div>
-                    <div style={{...S.td,flex:.9,fontSize:12}}><span style={S.ptBadge}>{ptLabel(o.productType)}</span></div>
-                    <div style={{...S.td,flex:.4,fontSize:13,color:"#666"}}>{o.channel==="store"?"店內":"網上"}</div>
-                    <div style={{...S.td,flex:1,fontWeight:600}}>{o.client}</div>
-                    <div style={{...S.td,flex:1.5,color:"#777",fontSize:13}}>{o.carMake} {o.carModel} {o.carYear}</div>
-                    <div style={{...S.td,flex:.9}}><span style={{...S.sp,background:st.color+"22",color:st.color,borderColor:st.color+"44"}}>{st.icon} {st.label}</span></div>
-                    <div style={{...S.td,flex:.8,fontSize:12}}>
-                      {o.due ? (()=>{
-                        const daysLeft = Math.ceil((new Date(o.due)-new Date())/(1000*60*60*24));
-                        const overdue = daysLeft<0 && !["done","delivered"].includes(o.status);
-                        const urgent = daysLeft>=0 && daysLeft<=7 && !["done","delivered"].includes(o.status);
-                        return <span style={{color:overdue?"#E84B4B":urgent?"#E87C4B":"#555",fontWeight:overdue||urgent?700:400}}>
-                          {o.due}{overdue?` (${Math.abs(daysLeft)}d overdue)`:urgent?` (${daysLeft}d left)`:""}
-                        </span>;
-                      })() : "—"}
+                    <div style={{...S.td,flex:.8,fontSize:11,color:"#888",fontFamily:"monospace"}}>{o.invoiceNo||"—"}</div>
+                    <div style={{...S.td,flex:.8,fontSize:11}}><span style={S.ptBadge}>{ptLabel(o.productType)}</span></div>
+                    <div style={{...S.td,flex:1,fontWeight:600,fontSize:13}}>{o.client}</div>
+                    <div style={{...S.td,flex:2}}>
+                      <div style={{fontSize:12,color:"#555"}}>{o.carMake} {o.carModel} {o.carYear}</div>
+                      {(()=>{
+                        const rows=buildSpecRows(o);
+                        if(!rows.length) return null;
+                        const preview=rows.slice(0,2).map(([k,v])=>v).join(" · ");
+                        return(
+                          <div style={{fontSize:11,color:"#4361EE",marginTop:2,cursor:"pointer"}}
+                            onClick={e=>{e.stopPropagation();setSpecPopup(o.id);}}>
+                            {preview}{rows.length>2?` +${rows.length-2} more`:""}
+                          </div>
+                        );
+                      })()}
                     </div>
-                    <div style={{...S.td,flex:.8,fontFamily:"monospace",fontWeight:700}}>{fmtHKD(o.total)}</div>
+                    <div style={{...S.td,flex:.9}}><span style={{...S.sp,background:st.color+"22",color:st.color,borderColor:st.color+"44"}}>{st.icon} {st.label}</span></div>
+                    <div style={{...S.td,flex:.9,fontSize:11}}>
+                      {o.due?(()=>{
+                        const daysLeft=Math.ceil((new Date(o.due)-new Date())/(1000*60*60*24));
+                        const overdue=daysLeft<0&&!["done","delivered"].includes(o.status);
+                        const urgent=daysLeft>=0&&daysLeft<=7&&!["done","delivered"].includes(o.status);
+                        return <span style={{color:overdue?"#E84B4B":urgent?"#E87C4B":"#555",fontWeight:overdue||urgent?700:400}}>
+                          {o.due}{overdue?` (${Math.abs(daysLeft)}d)`:urgent?` (${daysLeft}d)`:""}
+                        </span>;
+                      })():"—"}
+                    </div>
+                    <div style={{...S.td,flex:.7,fontFamily:"monospace",fontWeight:700,fontSize:12}}>{fmtHKD(o.total)}</div>
                   </div>
                 );})}
                 {filteredOrders.length===0&&<div style={S.er}>— {t.all} —</div>}
@@ -2056,7 +2078,13 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                       </span>
                     </div>
                     <div style={{fontSize:12,color:"#888"}}>{a.raisedBy||"—"}</div>
-                    <button style={{background:"#FFF0F0",border:"1px solid #FFCCCC",color:"#CC3333",borderRadius:5,padding:"3px 7px",fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}} onClick={()=>delAlert(a.id)}>✕</button>
+                    <div style={{display:"flex",gap:4}}>
+                      <button style={{background:"#EEF1FF",border:"1px solid #C5CEFF",color:"#4361EE",borderRadius:5,padding:"3px 7px",fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}
+                        onClick={()=>setEditingAlert({...a})}>
+                        {lang==="zh"?"改":"Edit"}
+                      </button>
+                      <button style={{background:"#FFF0F0",border:"1px solid #FFCCCC",color:"#CC3333",borderRadius:5,padding:"3px 7px",fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}} onClick={()=>delAlert(a.id)}>✕</button>
+                    </div>
                   </div>
                 );
               })}
@@ -2193,6 +2221,77 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
           </div>
         )}
       </div>
+
+      {/* Spec Popup */}
+      {specPopup && (()=>{
+        const o = orders.find(x=>x.id===specPopup);
+        if(!o) return null;
+        const rows = buildSpecRows(o);
+        const st = getSt(o.status);
+        return(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}} onClick={()=>setSpecPopup(null)}>
+            <div style={{background:"#fff",borderRadius:14,padding:"24px",width:420,maxHeight:"80vh",overflowY:"auto",boxShadow:"0 16px 60px rgba(0,0,0,0.2)"}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+                <div>
+                  <div style={{fontFamily:"monospace",color:"#4361EE",fontWeight:700,fontSize:14}}>{o.id}</div>
+                  <div style={{fontWeight:700,fontSize:18,color:"#1a1a2e",marginTop:2}}>{o.client}</div>
+                  <div style={{fontSize:12,color:"#888"}}>{o.carMake} {o.carModel} {o.carYear}</div>
+                </div>
+                <span style={{...S.sp,background:st.color+"22",color:st.color,borderColor:st.color+"44"}}>{st.label}</span>
+              </div>
+              <div style={{fontSize:10,color:"#4361EE",letterSpacing:2,fontWeight:700,marginBottom:8,textTransform:"uppercase"}}>{ptLabel(o.productType)} — {lang==="zh"?"規格詳情":"Specifications"}</div>
+              {rows.map(([k,v])=>(
+                <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #F0F2F8",fontSize:13}}>
+                  <span style={{color:"#888",fontSize:11}}>{k}</span>
+                  <span style={{fontWeight:600,color:"#1a1a2e",textAlign:"right",maxWidth:"60%"}}>{v}</span>
+                </div>
+              ))}
+              {o.notes&&<div style={{marginTop:12,background:"#FFFBF0",border:"1px solid #FFE099",borderRadius:7,padding:"10px",fontSize:12,color:"#666"}}>{o.notes}</div>}
+              <div style={{display:"flex",gap:8,marginTop:16}}>
+                <button style={{...S.pb,flex:1}} onClick={()=>{setSpecPopup(null);setActiveOrder(o);setOrderView("detail");}}>
+                  {lang==="zh"?"查看完整訂單":"View Full Order"}
+                </button>
+                <button style={{...S.gb}} onClick={()=>setSpecPopup(null)}>{t.cancel}</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Edit Alert Modal */}
+      {editingAlert && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}} onClick={()=>setEditingAlert(null)}>
+          <div style={{background:"#fff",borderRadius:14,padding:"24px",width:500,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 16px 60px rgba(0,0,0,0.2)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:16,fontWeight:700,color:"#1a1a2e",marginBottom:16}}>{lang==="zh"?"編輯缺貨提醒":"Edit Stock Alert"}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div style={S.fi2}><label style={S.fl2}>{lang==="zh"?"車廠":"Make"}</label><select style={S.fin} value={editingAlert.carMake||""} onChange={e=>setEditingAlert(p=>({...p,carMake:e.target.value}))}>{settingsCarMakes.map(v=><option key={v}>{v}</option>)}</select></div>
+              <div style={S.fi2}><label style={S.fl2}>{lang==="zh"?"年份":"Year"}</label><input style={S.fin} value={editingAlert.carYear||""} onChange={e=>setEditingAlert(p=>({...p,carYear:e.target.value}))}/></div>
+              <div style={{...S.fi2,gridColumn:"1/-1"}}><label style={S.fl2}>{lang==="zh"?"型號":"Model"}</label><input style={S.fin} value={editingAlert.carModel||""} onChange={e=>setEditingAlert(p=>({...p,carModel:e.target.value}))}/></div>
+              <div style={S.fi2}><label style={S.fl2}>{lang==="zh"?"物料":"Material"}</label><input style={S.fin} value={editingAlert.material||""} onChange={e=>setEditingAlert(p=>({...p,material:e.target.value}))}/></div>
+              <div style={S.fi2}><label style={S.fl2}>{lang==="zh"?"顏色":"Colour"}</label><input style={S.fin} value={editingAlert.color||""} onChange={e=>setEditingAlert(p=>({...p,color:e.target.value}))}/></div>
+              <div style={S.fi2}><label style={S.fl2}>{lang==="zh"?"建議補貨數量":"Suggest Qty"}</label><input type="number" style={S.fin} value={editingAlert.suggestQty||""} onChange={e=>setEditingAlert(p=>({...p,suggestQty:+e.target.value}))}/></div>
+              <div style={S.fi2}><label style={S.fl2}>{lang==="zh"?"下單狀態":"Order Status"}</label>
+                <select style={S.fin} value={editingAlert.orderStatus||"pending"} onChange={e=>setEditingAlert(p=>({...p,orderStatus:e.target.value}))}>
+                  <option value="pending">{lang==="zh"?"未下單":"Not Ordered"}</option>
+                  <option value="ordered">{lang==="zh"?"已下單":"Ordered"}</option>
+                </select>
+              </div>
+              <div style={S.fi2}><label style={S.fl2}>{lang==="zh"?"建議補貨日期":"Suggested Date"}</label><input type="date" style={S.fin} value={editingAlert.orderDate||""} onChange={e=>setEditingAlert(p=>({...p,orderDate:e.target.value}))}/></div>
+              <div style={{...S.fi2,gridColumn:"1/-1"}}><label style={S.fl2}>{lang==="zh"?"原因":"Reason"}</label>
+                <select style={S.fin} value={editingAlert.reason||""} onChange={e=>setEditingAlert(p=>({...p,reason:e.target.value}))}>
+                  <option value="">—</option>
+                  {t.reasonOptions.map(v=><option key={v}>{v}</option>)}
+                </select>
+              </div>
+              <div style={{...S.fi2,gridColumn:"1/-1"}}><label style={S.fl2}>{lang==="zh"?"提醒人":"Raised By"}</label><input style={S.fin} value={editingAlert.raisedBy||""} onChange={e=>setEditingAlert(p=>({...p,raisedBy:e.target.value}))}/></div>
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+              <button style={S.gb} onClick={()=>setEditingAlert(null)}>{t.cancel}</button>
+              <button style={S.pb} onClick={saveEditAlert}>{lang==="zh"?"儲存更改":"Save Changes"}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Excel Export Modal */}
       {showExport && (
