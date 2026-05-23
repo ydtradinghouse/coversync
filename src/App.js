@@ -615,11 +615,17 @@ function ProductFields({ productType, form, setForm, lang, t, MATERIALS, COLORS,
   // other
   return (
     <div style={fdg}>
-      <div style={fi2}><label style={fl2}>{t.material}</label>
-        <select style={fin} value={form.material||""} onChange={e=>setForm(p=>({...p,material:e.target.value}))}>{MATERIALS.map(v=><option key={v}>{v}</option>)}</select>
+      <div style={{...fi2,gridColumn:"1/-1"}}><label style={fl2}>{lang==="zh"?"貨品名稱":"Item Name"}</label>
+        <input style={fin} placeholder={lang==="zh"?"例：車窗貼膜、避震器…":"e.g. Window Tint, Shock Absorber…"} value={form.itemName||""} onChange={e=>setForm(p=>({...p,itemName:e.target.value}))}/>
       </div>
-      <div style={fi2}><label style={fl2}>{t.color}</label>
-        <select style={fin} value={form.color||""} onChange={e=>setForm(p=>({...p,color:e.target.value}))}>{COLORS.map(v=><option key={v}>{v}</option>)}</select>
+      <div style={{...fi2,gridColumn:"1/-1"}}><label style={fl2}>{lang==="zh"?"規格 Specification":"Specification"}</label>
+        <textarea style={{...fin,minHeight:72,resize:"vertical",width:"100%"}} placeholder={lang==="zh"?"填寫規格、型號、尺寸、顏色等…":"Spec, model, size, colour, etc…"} value={form.specification||""} onChange={e=>setForm(p=>({...p,specification:e.target.value}))}/>
+      </div>
+      <div style={fi2}><label style={fl2}>{lang==="zh"?"物料":"Material"}</label>
+        <input style={fin} placeholder={lang==="zh"?"物料…":"Material…"} value={form.material||""} onChange={e=>setForm(p=>({...p,material:e.target.value}))}/>
+      </div>
+      <div style={fi2}><label style={fl2}>{lang==="zh"?"顏色":"Colour"}</label>
+        <input style={fin} placeholder={lang==="zh"?"顏色…":"Colour…"} value={form.color||""} onChange={e=>setForm(p=>({...p,color:e.target.value}))}/>
       </div>
     </div>
   );
@@ -644,11 +650,22 @@ function SpecSummary({ order, lang, t }) {
 // ═══════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════
+const APP_PASSWORD = "yd2025"; // Change this to your desired password
+
 export default function App() {
   const [lang, setLang] = useState("zh");
   const t = T[lang];
   const ORDER_STATUSES = getOrderStatuses(t);
   const BULK_STATUSES  = getBulkStatuses(t);
+
+  // Login
+  const [loggedIn, setLoggedIn] = useState(() => sessionStorage.getItem("cs_auth")==="1");
+  const [pwInput, setPwInput]   = useState("");
+  const [pwError, setPwError]   = useState(false);
+  const doLogin = () => {
+    if (pwInput===APP_PASSWORD) { sessionStorage.setItem("cs_auth","1"); setLoggedIn(true); setPwError(false); }
+    else { setPwError(true); setPwInput(""); }
+  };
 
   const [tab, setTab]     = useState("orders");
   const [toast, setToast] = useState("");
@@ -707,7 +724,7 @@ export default function App() {
   const [waLang, setWaLang]             = useState("zh");
   const [showWA, setShowWA]             = useState(false);
   const [invoiceInput, setInvoiceInput] = useState("");
-  const emptyOrder = { productType:"seat", channel:"store", client:"", phone:"", email:"", carMake:CAR_MAKES[0], carYear:"", carModel:"", seats:"", material:"", color:"", mat2Material:"", mat2Color:"", layers:"", stitching:"", embroidery:"", screenSize:"", compatible:"", rearCam:"", steerDiam:"", bootWaterproof:"", bootFullWrap:"", deposit:"", total:"", due:"", address:"", notes:"", invoiceNo:"", groupId:"", designType:"ORIGINAL", customDesignNote:"" };
+  const emptyOrder = { productType:"seat", channel:"store", client:"", phone:"", email:"", carMake:CAR_MAKES[0], carYear:"", carModel:"", seats:"", material:"", color:"", colorHistory:[], mat2Material:"", mat2Color:"", layers:"", stitching:"", embroidery:"", screenSize:"", compatible:"", rearCam:"", steerDiam:"", bootWaterproof:"", bootFullWrap:"", itemName:"", specification:"", shieldType:"", deposit:"", total:"", due:"", orderDate:NOW, customId:"", address:"", notes:"", invoiceNo:"", groupId:"", designType:"ORIGINAL", customDesignNote:"" };
   const [oForm, setOForm] = useState(emptyOrder);
 
   // Bulk
@@ -716,6 +733,7 @@ export default function App() {
   const [activeBulk, setActiveBulk]   = useState(null);
   const [bulkFilter, setBulkFilter]   = useState("all");
   const [bulkPtFilter, setBulkPtFilter] = useState("all");
+  const [selBulk, setSelBulk]         = useState([]);
   const emptyBulk = { productType:"seat", supplier:"", carMake:CAR_MAKES[0], carYear:"", carModel:"", material:"", materialZh:"", color:"", colorZh:"", qty:"", unit:"套", costPerUnit:"", sellPerUnit:"", eta:"", stockQty:"", minStock:"", notes:"" };
   const [bForm, setBForm] = useState(emptyBulk);
 
@@ -789,17 +807,25 @@ export default function App() {
     return String(max+1).padStart(3,"0");
   };
 
+  // Auto-calculate ETD: orderDate + 6 weeks
+  const calcETD = (dateStr) => {
+    const d = new Date(dateStr||NOW);
+    d.setDate(d.getDate()+42); // 6 weeks
+    return d.toISOString().slice(0,10);
+  };
+
   const saveOrder = async () => {
     let newId;
     const groupBase = oForm.groupId?.trim();
-    if (groupBase) {
-      // Sub-order: find siblings and assign next letter
+    const customId = oForm.customId?.trim();
+    if (customId) {
+      newId = customId;
+    } else if (groupBase) {
       const siblings = orders.filter(o=>o.groupId===groupBase);
       const letters = "BCDEFGHIJKLMNOPQRSTUVWXYZ";
       if (siblings.length===0) {
-        newId = groupBase; // first item = no letter
+        newId = groupBase;
       } else if (siblings.length===1 && siblings[0].id===groupBase) {
-        // rename first to 001A, new one is 001B
         const firstUpdated = {...siblings[0], id:groupBase+"A"};
         setOrders(p=>p.map(o=>o.id===groupBase?firstUpdated:o));
         await sb.upsert("orders", groupBase+"A", firstUpdated);
@@ -813,11 +839,12 @@ export default function App() {
     } else {
       newId = nextOrderNum();
     }
-    const o = { ...oForm, id:newId, groupId:groupBase||newId, deposit:+oForm.deposit||0, total:+oForm.total||0, created:NOW, status:"pending", reorder:false,
-      shipNo:"", shipDate:"", productionDoneDate:"", completedDate:"", contactedClient:false, issueNote:"", photos:[] };
+    const orderDate = oForm.orderDate||NOW;
+    const autoETD = calcETD(orderDate);
+    const o = { ...oForm, id:newId, groupId:groupBase||newId, deposit:+oForm.deposit||0, total:+oForm.total||0, created:NOW, orderDate, due:oForm.due||autoETD, status:"pending", reorder:false, colorHistory:[], shipNo:"", shipDate:"", productionDoneDate:"", completedDate:"", contactedClient:false, issueNote:"", photos:[] };
     setOrders(p=>[o,...p]); setOrderView("list"); setOForm({...emptyOrder});
     await sb.upsert("orders", newId, o);
-    flash("✓ Order "+newId+" created");
+    flash("✓ Order "+newId+" created — ETD: "+autoETD);
   };
 
   const updateOSt = async (id,st) => {
@@ -825,6 +852,21 @@ export default function App() {
     if(activeOrder?.id===id) setActiveOrder(a=>({...a,status:st}));
     const updated = orders.find(o=>o.id===id); if(updated) await sb.upsert("orders",id,{...updated,status:st});
     flash(t.updateStatus+" ✓");
+  };
+
+  const updateOrderColor = async (id, newColor) => {
+    const order = orders.find(o=>o.id===id);
+    if(!order) return;
+    const history = [...(order.colorHistory||[]), {
+      from: order.color||"",
+      to: newColor,
+      date: NOW,
+      time: new Date().toLocaleTimeString("zh-HK",{hour:"2-digit",minute:"2-digit"})
+    }];
+    setOrders(p=>p.map(o=>o.id===id?{...o,color:newColor,colorHistory:history}:o));
+    if(activeOrder?.id===id) setActiveOrder(a=>({...a,color:newColor,colorHistory:history}));
+    await sb.upsert("orders",id,{...order,color:newColor,colorHistory:history});
+    flash(lang==="zh"?"顏色已更新並記錄":"Colour updated & recorded");
   };
 
   const confirmWithInvoice = async (id, invNo) => {
@@ -903,6 +945,71 @@ COVERSYNC
 
   const sendPO = (id) => { updateBSt(id,"confirmed"); flash("PO confirmed / 採購單已確認"); };
 
+  const genCombinedPO = (bulkList) => {
+    const supplier = bulkList[0]?.supplier||"";
+    const rows = bulkList.map((b,i)=>`<tr>
+      <td>${i+1}</td>
+      <td>${PT_LABELS[b.productType]||b.productType}</td>
+      <td>${b.carMake} ${b.carModel||""}</td>
+      <td>${b.carYear||"—"}</td>
+      <td>—</td>
+      <td>—</td>
+      <td>${b.materialZh||b.material||"—"}</td>
+      <td>${b.colorZh||b.color||"—"}</td>
+      <td><strong>${b.qty} ${b.unit}</strong></td>
+      <td style="text-align:left">${b.notes||""}</td>
+    </tr>`).join("");
+    const totalQty = bulkList.reduce((s,b)=>s+(+b.qty||0),0);
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+  body{font-family:'PingFang TC','Microsoft YaHei',Arial,sans-serif;color:#000;margin:0;padding:30px;font-size:13px;}
+  .header{text-align:center;margin-bottom:20px;}
+  .title{font-size:16px;font-weight:700;margin-bottom:4px;}
+  table{width:100%;border-collapse:collapse;margin-top:12px;}
+  th{background:#4361EE;color:#fff;padding:8px 10px;font-size:12px;text-align:center;border:1px solid #3050cc;}
+  td{padding:8px 10px;border:1px solid #ccc;font-size:12px;text-align:center;vertical-align:middle;}
+  tr:nth-child(even) td{background:#F0F4FF;}
+  .total-row td{font-weight:700;background:#EEF1FF;border-top:2px solid #4361EE;}
+  .stamp-area{margin-top:32px;display:grid;grid-template-columns:1fr 1fr;gap:40px;}
+  .stamp-box{border-top:1px solid #000;padding-top:10px;text-align:center;font-size:12px;color:#555;}
+  @media print{body{padding:15px;}}
+</style></head><body>
+<div class="header">
+  <div class="title">COVERSYNC — 合併採購訂單 Combined Purchase Order</div>
+  <div>供應商 Supplier: <strong>${supplier}</strong> &nbsp;|&nbsp; 日期 Date: ${NOW} &nbsp;|&nbsp; 共 ${bulkList.length} 款產品</div>
+</div>
+<table>
+  <thead><tr>
+    <th style="width:35px">No</th><th>產品</th><th>車型</th><th>年份</th><th>座位</th><th>款式</th><th>皮料</th><th>顏色</th><th>數量</th><th>備注</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+  <tfoot><tr class="total-row"><td colspan="8" style="text-align:right">合計 Total</td><td><strong>${totalQty} 套</strong></td><td></td></tr></tfoot>
+</table>
+<div class="stamp-area">
+  <div class="stamp-box">採購方簽署 Buyer Signature<br><br><br></div>
+  <div class="stamp-box">供應商確認 Supplier Confirmation<br><br><br></div>
+</div>
+</body></html>`;
+  };
+
+  // Auto-update stock alerts to "ordered" when bulk confirmed
+  const updateBStWithAlerts = async (id, st) => {
+    await updateBSt(id, st);
+    if (st==="confirmed") {
+      const bulk = bulkOrders.find(b=>b.id===id);
+      if (!bulk) return;
+      const updatedAlerts = stockAlerts.map(a=>{
+        if(a.productType===bulk.productType && a.carMake===bulk.carMake && a.orderStatus!=="ordered") {
+          return {...a, orderStatus:"ordered"};
+        }
+        return a;
+      });
+      setStockAlerts(updatedAlerts);
+      await Promise.all(updatedAlerts.filter((a,i)=>a!==stockAlerts[i]).map(a=>sb.upsert("stock_alerts",a.id,a)));
+      flash(lang==="zh"?"大貨已確認，低庫存提醒自動更新為已下單":"Bulk confirmed — stock alerts auto-updated to Ordered");
+    }
+  };
+
   const delBulk = async (id) => {
     setBulkOrders(p=>p.filter(b=>b.id!==id)); setActiveBulk(null); setBulkView("list");
     await sb.delete("bulk_orders",id);
@@ -935,10 +1042,189 @@ COVERSYNC
 
   const copyWA = (text) => { navigator.clipboard.writeText(text).then(()=>flash(t.copied)); };
 
+  // Excel export
+  const [showExport, setShowExport] = useState(false);
+  const ALL_COLS = [
+    {k:"id",        l:"訂單號"},
+    {k:"orderDate", l:"訂單日期"},
+    {k:"client",    l:"客人"},
+    {k:"phone",     l:"電話"},
+    {k:"email",     l:"Email"},
+    {k:"channel",   l:"渠道"},
+    {k:"productType",l:"產品類型"},
+    {k:"carMake",   l:"車廠"},
+    {k:"carModel",  l:"型號"},
+    {k:"carYear",   l:"年份"},
+    {k:"material",  l:"物料"},
+    {k:"color",     l:"顏色"},
+    {k:"stitching", l:"車線/喉管"},
+    {k:"seats",     l:"座位"},
+    {k:"total",     l:"總金額"},
+    {k:"deposit",   l:"訂金"},
+    {k:"invoiceNo", l:"Invoice No."},
+    {k:"status",    l:"狀態"},
+    {k:"due",       l:"ETD"},
+    {k:"shipNo",    l:"集運單號"},
+    {k:"shipDate",  l:"發貨日期"},
+    {k:"notes",     l:"備注"},
+  ];
+  const [selCols, setSelCols] = useState(["id","orderDate","client","phone","productType","carMake","carModel","status","total","invoiceNo","due"]);
+
+  const exportExcel = () => {
+    const header = selCols.map(k=>ALL_COLS.find(c=>c.k===k)?.l||k);
+    const rows = orders.map(o=>selCols.map(k=>{
+      if(k==="productType") return ptLabel(o[k]);
+      if(k==="status") return getSt(o.status)?.label||o.status;
+      if(k==="channel") return o.channel==="store"?"店內":"網上";
+      return o[k]||"";
+    }));
+    const csv = [header,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `coversync-orders-${NOW}.csv`;
+    a.click();
+    flash(lang==="zh"?"Excel 已匯出":"Excel exported");
+    setShowExport(false);
+  };
+
+  // PDF order - opens in new window, can save as PDF
+  const genOrderPDF = (order) => {
+    const specRows = buildSpecRows(order);
+    const st = getSt(order.status);
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+  body{font-family:'Helvetica Neue',Arial,sans-serif;color:#111;margin:0;padding:30px;font-size:13px;}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #4361EE;}
+  .logo{height:45px;object-fit:contain;}
+  .doc-info{text-align:right;}
+  .doc-title{font-size:11px;color:#888;letter-spacing:2px;text-transform:uppercase;}
+  .doc-id{font-size:20px;font-weight:700;color:#4361EE;font-family:monospace;margin:4px 0;}
+  .doc-date{font-size:11px;color:#888;}
+  .status-badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;margin-top:6px;}
+  .section{margin-bottom:20px;}
+  .section-title{font-size:9px;color:#4361EE;letter-spacing:3px;font-weight:700;text-transform:uppercase;border-bottom:1px solid #E8ECF4;padding-bottom:6px;margin-bottom:12px;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .field-label{font-size:10px;color:#888;margin-bottom:2px;}
+  .field-value{font-size:13px;font-weight:600;}
+  .spec-table{width:100%;border-collapse:collapse;margin-top:8px;}
+  .spec-table td{padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;}
+  .spec-table td:first-child{color:#888;font-size:10px;letter-spacing:1px;text-transform:uppercase;width:35%;}
+  .spec-table td:last-child{font-weight:600;}
+  .price-section{background:#F8F9FF;border-radius:8px;padding:16px;margin-top:16px;}
+  .price-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #E8ECF4;font-size:13px;}
+  .price-total{display:flex;justify-content:space-between;padding:10px 0;font-weight:700;font-size:16px;color:#4361EE;}
+  .timeline{margin-top:20px;}
+  .tl-item{display:flex;gap:10px;align-items:flex-start;padding:6px 0;}
+  .tl-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:3px;}
+  .tl-label{font-size:12px;}
+  .footer{margin-top:32px;padding-top:16px;border-top:1px solid #E8ECF4;font-size:10px;color:#aaa;text-align:center;}
+  .etd-alert{background:#FFF5F5;border:1px solid #FFCCCC;border-radius:6px;padding:8px 12px;font-size:11px;color:#E84B4B;font-weight:700;margin-top:8px;}
+  @media print{body{padding:15px;} @page{margin:1cm;}}
+</style>
+<script>window.onload=function(){if(navigator.share){document.getElementById('sharebtn').style.display='block';}}</script>
+</head><body>
+<div class="header">
+  <div class="doc-info" style="text-align:left">
+    <div class="doc-title">訂單詳情 Order Details</div>
+    <div class="doc-id">${order.id}</div>
+    <div class="doc-date">${lang==="zh"?"訂單日期":"Order Date"}: ${order.orderDate||order.created||NOW}</div>
+    <div class="status-badge" style="background:${st.color}22;color:${st.color};border:1px solid ${st.color}44">${st.label}</div>
+  </div>
+  <div style="text-align:right;font-size:22px;font-weight:900;color:#4361EE;letter-spacing:3px">COVERSYNC<br><span style="font-size:11px;color:#888;font-weight:400;letter-spacing:1px">Y&D Trading House</span></div>
+</div>
+
+<div class="section">
+  <div class="section-title">${lang==="zh"?"客人資料":"Client Information"}</div>
+  <div class="grid">
+    <div><div class="field-label">${lang==="zh"?"客人姓名":"Name"}</div><div class="field-value">${order.client}</div></div>
+    <div><div class="field-label">${lang==="zh"?"電話":"Phone"}</div><div class="field-value">${order.phone}</div></div>
+    ${order.email?`<div><div class="field-label">Email</div><div class="field-value">${order.email}</div></div>`:""}
+    ${order.address?`<div style="grid-column:1/-1"><div class="field-label">${lang==="zh"?"地址":"Address"}</div><div class="field-value">${order.address}</div></div>`:""}
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">${lang==="zh"?"車輛資料":"Vehicle"}</div>
+  <div class="grid">
+    <div><div class="field-label">${lang==="zh"?"車廠型號":"Make & Model"}</div><div class="field-value">${order.carMake} ${order.carModel||""}</div></div>
+    <div><div class="field-label">${lang==="zh"?"年份":"Year"}</div><div class="field-value">${order.carYear||"—"}</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">${lang==="zh"?"產品規格":"Product Specifications"}</div>
+  <div style="display:inline-block;background:#EEF1FF;color:#4361EE;border:1px solid #C5CEFF;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:700;margin-bottom:10px">${ptLabel(order.productType)}</div>
+  ${order.designType==="CUSTOM"?`<div style="display:inline-block;background:#FFF8EE;color:#D97706;border:1px solid #FFD580;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:700;margin-left:6px;margin-bottom:10px">Custom</div>`:""}
+  <table class="spec-table"><tbody>
+    ${specRows.map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join("")}
+    ${order.customDesignNote?`<tr><td>Custom Notes</td><td>${order.customDesignNote}</td></tr>`:""}
+  </tbody></table>
+</div>
+
+<div class="price-section">
+  <div class="section-title" style="border-color:#C5CEFF">${lang==="zh"?"付款詳情":"Payment"}</div>
+  <div class="price-row"><span>${lang==="zh"?"總金額":"Total"}</span><span style="font-weight:700">${fmtHKD(order.total)}</span></div>
+  <div class="price-row"><span>${lang==="zh"?"已付訂金":"Deposit Paid"}</span><span style="color:#16A34A;font-weight:600">${fmtHKD(order.deposit)}</span></div>
+  <div class="price-total"><span>${lang==="zh"?"待收餘款":"Balance Due"}</span><span>${fmtHKD(order.total-order.deposit)}</span></div>
+  ${order.invoiceNo?`<div class="price-row"><span>Invoice No.</span><span style="font-family:monospace;font-weight:700">${order.invoiceNo}</span></div>`:""}
+  ${order.due?`<div class="price-row"><span>ETD</span><span>${order.due}</span></div>`:""}
+</div>
+
+${order.shipNo?`<div class="section" style="margin-top:16px">
+  <div class="section-title">${lang==="zh"?"集運資料":"Shipping"}</div>
+  <div class="grid">
+    <div><div class="field-label">${lang==="zh"?"集運單號":"Tracking No."}</div><div class="field-value" style="font-family:monospace">${order.shipNo}</div></div>
+    ${order.shipDate?`<div><div class="field-label">${lang==="zh"?"發貨日期":"Ship Date"}</div><div class="field-value">${order.shipDate}</div></div>`:""}
+  </div>
+</div>`:""}
+
+${order.notes?`<div class="section" style="margin-top:16px"><div class="section-title">${lang==="zh"?"備注":"Notes"}</div><div style="background:#FFFBF0;border:1px solid #FFE099;border-radius:6px;padding:12px;font-size:13px">${order.notes}</div></div>`:""}
+
+<div class="footer">
+  COVERSYNC · Y&D Trading House · ${lang==="zh"?"此文件由系統自動生成":"This document is system-generated"} · ${NOW}
+</div>
+<div style="text-align:center;margin-top:16px;display:none" id="sharebtn">
+  <button onclick="navigator.share({title:'Order ${order.id}',text:'COVERSYNC Order Details',url:window.location.href})" style="background:#4361EE;color:#fff;border:none;border-radius:8px;padding:12px 24px;font-size:14px;font-weight:700;cursor:pointer">Share / Save PDF</button>
+</div>
+<script>
+  // Auto-prompt save as PDF on mobile
+  setTimeout(function(){
+    if(/iPhone|iPad|Android/i.test(navigator.userAgent)){
+      document.getElementById('sharebtn').style.display='block';
+    }
+  },500);
+</script>
+</body></html>`;
+  };
+
   return (
     <div style={S.root}>
       <style>{CSS}</style>
       {toast && <div style={S.toast}>{toast}</div>}
+
+      {/* Login screen */}
+      {!loggedIn && (
+        <div style={{position:"fixed",inset:0,background:"#F5F6FA",display:"flex",alignItems:"center",justifyContent:"center",zIndex:999}}>
+          <div style={{background:"#fff",borderRadius:16,padding:"40px",width:360,boxShadow:"0 8px 40px rgba(0,0,0,0.1)",border:"1px solid #E8ECF4"}}>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:18,fontWeight:700,color:"#4361EE",letterSpacing:3,marginBottom:4}}>COVERSYNC</div>
+            <div style={{fontSize:12,color:"#aaa",marginBottom:28}}>Y&D Trading House</div>
+            <div style={{fontSize:13,color:"#555",marginBottom:8,fontWeight:600}}>{lang==="zh"?"請輸入密碼":"Enter Password"}</div>
+            <input type="password" style={{...S.fin,width:"100%",marginBottom:8,fontSize:15}} placeholder="••••••••"
+              value={pwInput} onChange={e=>{setPwInput(e.target.value);setPwError(false);}}
+              onKeyDown={e=>e.key==="Enter"&&doLogin()}
+              autoFocus/>
+            {pwError && <div style={{color:"#E84B4B",fontSize:12,marginBottom:8}}>{lang==="zh"?"密碼錯誤，請重試":"Incorrect password, please try again"}</div>}
+            <button style={{...S.pb,width:"100%",marginTop:4,fontSize:14}} onClick={doLogin}>
+              {lang==="zh"?"登入":"Login"}
+            </button>
+            <div style={{display:"flex",justifyContent:"center",gap:8,marginTop:16}}>
+              <button className="lang-btn" style={{...S.langBtn,...(lang==="zh"?S.langBtnActive:{})}} onClick={()=>setLang("zh")}>中</button>
+              <button className="lang-btn" style={{...S.langBtn,...(lang==="en"?S.langBtnActive:{})}} onClick={()=>setLang("en")}>EN</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Loading screen */}
       {loading && (
@@ -977,10 +1263,12 @@ COVERSYNC
             <button className="lang-btn" style={{...S.langBtn,...(lang==="en"?S.langBtnActive:{})}} onClick={()=>setLang("en")}>EN</button>
           </div>
           <div style={S.statsBar}>
-            <div style={S.statPill}><span style={S.statN}>{orders.filter(o=>!["delivered","issue"].includes(o.status)).length}</span><span style={S.statL}>{t.inProgress}</span></div>
+            <div style={S.statPill}><span style={S.statN}>{orders.filter(o=>!["delivered","issue","done"].includes(o.status)).length}</span><span style={S.statL}>{t.inProgress}</span></div>
             <div style={S.statDiv}/>
             <div style={S.statPill}><span style={{...S.statN,color:"#E84B4B"}}>{orders.filter(o=>o.status==="issue").length}</span><span style={S.statL}>{t.hasIssue}</span></div>
           </div>
+          <button style={{...S.gb,fontSize:11,padding:"5px 10px"}} onClick={()=>setShowExport(true)}>{lang==="zh"?"匯出 Excel":"Export Excel"}</button>
+          <button style={{...S.gb,fontSize:11,padding:"5px 10px"}} onClick={()=>{sessionStorage.removeItem("cs_auth");setLoggedIn(false);}}>{lang==="zh"?"登出":"Logout"}</button>
         </div>
       </header>
 
@@ -1026,7 +1314,16 @@ COVERSYNC
                     <div style={{...S.td,flex:1,fontWeight:600}}>{o.client}</div>
                     <div style={{...S.td,flex:1.5,color:"#777",fontSize:13}}>{o.carMake} {o.carModel} {o.carYear}</div>
                     <div style={{...S.td,flex:.9}}><span style={{...S.sp,background:st.color+"22",color:st.color,borderColor:st.color+"44"}}>{st.icon} {st.label}</span></div>
-                    <div style={{...S.td,flex:.8,fontSize:12,color:o.due&&new Date(o.due)<new Date()&&o.status!=="delivered"?"#E84B4B":"#555"}}>{o.due||"—"}</div>
+                    <div style={{...S.td,flex:.8,fontSize:12}}>
+                      {o.due ? (()=>{
+                        const daysLeft = Math.ceil((new Date(o.due)-new Date())/(1000*60*60*24));
+                        const overdue = daysLeft<0 && !["done","delivered"].includes(o.status);
+                        const urgent = daysLeft>=0 && daysLeft<=7 && !["done","delivered"].includes(o.status);
+                        return <span style={{color:overdue?"#E84B4B":urgent?"#E87C4B":"#555",fontWeight:overdue||urgent?700:400}}>
+                          {o.due}{overdue?` (${Math.abs(daysLeft)}d overdue)`:urgent?` (${daysLeft}d left)`:""}
+                        </span>;
+                      })() : "—"}
+                    </div>
                     <div style={{...S.td,flex:.8,fontFamily:"monospace",fontWeight:700}}>{fmtHKD(o.total)}</div>
                   </div>
                 );})}
@@ -1096,11 +1393,26 @@ COVERSYNC
                   </div>
                   {/* Payment */}
                   <div style={S.fs}><div style={S.fst}>{t.payment}</div><div style={S.fdg}>
+                    <div style={S.fi2}><label style={S.fl2}>{lang==="zh"?"訂單日期":"Order Date"}</label>
+                      <input type="date" style={S.fin} value={oForm.orderDate||NOW} onChange={e=>setOForm(p=>({...p,orderDate:e.target.value}))}/>
+                    </div>
+                    <div style={S.fi2}><label style={S.fl2}>{lang==="zh"?"自訂單號（留空自動生成）":"Custom Order ID (optional)"}</label>
+                      <input style={S.fin} placeholder={lang==="zh"?"留空 = 自動 001, 002…":"Leave blank = auto 001, 002…"} value={oForm.customId||""} onChange={e=>setOForm(p=>({...p,customId:e.target.value}))}/>
+                    </div>
                     <div style={S.fi2}><label style={S.fl2}>{t.total} (HK$)</label><input style={S.fin} type="number" placeholder="4800" value={oForm.total||""} onChange={e=>setOForm(p=>({...p,total:e.target.value}))}/></div>
                     <div style={S.fi2}><label style={S.fl2}>{t.deposit} (HK$)</label><input style={S.fin} type="number" placeholder="1000" value={oForm.deposit||""} onChange={e=>setOForm(p=>({...p,deposit:e.target.value}))}/></div>
-                    <div style={S.fi2}><label style={S.fl2}>{t.due}</label><input style={S.fin} type="date" value={oForm.due||""} onChange={e=>setOForm(p=>({...p,due:e.target.value}))}/></div>
+                    <div style={S.fi2}><label style={S.fl2}>{lang==="zh"?"ETD 預計完成（留空自動 +6週）":"ETD (blank = auto +6 weeks)"}</label>
+                      <input type="date" style={S.fin} value={oForm.due||""} onChange={e=>setOForm(p=>({...p,due:e.target.value}))}/>
+                    </div>
                     <div style={S.fi2}><label style={S.fl2}>{t.invoiceNo} <span style={{color:"#888",fontWeight:400}}>(optional)</span></label><input style={S.fin} placeholder="e.g. 13735" value={oForm.invoiceNo||""} onChange={e=>setOForm(p=>({...p,invoiceNo:e.target.value}))}/></div>
-                  </div></div>
+                  </div>
+                  {/* ETD preview */}
+                  {!oForm.due && oForm.orderDate && (
+                    <div style={{fontSize:11,color:"#4361EE",marginTop:4}}>
+                      {lang==="zh"?"自動 ETD：":"Auto ETD: "}{calcETD(oForm.orderDate)}
+                    </div>
+                  )}
+                  </div>
                 </div>
                 <div style={S.fs}><div style={S.fst}>{t.notes}</div><textarea style={{...S.fin,minHeight:70,resize:"vertical",width:"100%"}} placeholder="Special requirements…" value={oForm.notes||""} onChange={e=>setOForm(p=>({...p,notes:e.target.value}))}/></div>
                 <div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:8}}>
@@ -1165,12 +1477,36 @@ COVERSYNC
                     </div>
                     {activeOrder.notes&&<div style={S.nb}><span style={{color:"#555",fontSize:11,letterSpacing:2}}>{t.notes} </span>{activeOrder.notes}</div>}
 
+                    {/* Colour change history */}
+                    {activeOrder.colorHistory?.length>0 && (
+                      <div style={{...S.nb,marginTop:8,background:"#FFF8EE",borderColor:"#FFD580"}}>
+                        <div style={{fontSize:10,color:"#b87800",letterSpacing:2,fontWeight:700,marginBottom:6}}>{lang==="zh"?"顏色更改記錄":"COLOUR CHANGE HISTORY"}</div>
+                        {activeOrder.colorHistory.map((h,i)=>(
+                          <div key={i} style={{fontSize:11,color:"#666",padding:"3px 0",borderBottom:"1px solid #FFF0CC"}}>
+                            {h.date} {h.time} : {h.from||"(original)"} → {h.to}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* ETD countdown */}
+                    {activeOrder.due && !["done","delivered"].includes(activeOrder.status) && (()=>{
+                      const daysLeft = Math.ceil((new Date(activeOrder.due)-new Date())/(1000*60*60*24));
+                      const overdue = daysLeft<0;
+                      const urgent = daysLeft>=0 && daysLeft<=7;
+                      if(!overdue && !urgent) return null;
+                      return (
+                        <div style={{marginTop:8,padding:"10px 14px",background:overdue?"#FFF5F5":"#FFFBF0",border:`1px solid ${overdue?"#FFCCCC":"#FFD580"}`,borderRadius:8,fontSize:12,fontWeight:700,color:overdue?"#E84B4B":"#D97706"}}>
+                          {overdue ? `ETD 已過期 ${Math.abs(daysLeft)} 天！` : `ETD 剩餘 ${daysLeft} 天，請加快跟進！`}
+                        </div>
+                      );
+                    })()}
+
                     <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
                       {/* + Add same-client product */}
                       <button style={{...S.pb,background:"#16A34A"}} onClick={()=>{
                         setOForm({
                           ...emptyOrder,
-                          // Copy client & car info
                           client: activeOrder.client,
                           phone: activeOrder.phone,
                           email: activeOrder.email||"",
@@ -1180,16 +1516,16 @@ COVERSYNC
                           carYear: activeOrder.carYear,
                           carModel: activeOrder.carModel,
                           invoiceNo: activeOrder.invoiceNo||"",
-                          // Set groupId to link sub-orders
                           groupId: activeOrder.groupId||activeOrder.id,
                         });
                         setOrderView("new");
                         flash(lang==="zh"?"客人資料已複製，請選擇新產品":"Client info copied — select new product");
-                      }}>
-                        + {lang==="zh"?"加同客產品":"Add Product (Same Client)"}
-                      </button>
+                      }}>+ {lang==="zh"?"加同客產品":"Add Product (Same Client)"}</button>
                       <button style={S.docBtn} onClick={()=>openPrint(genCustomerDoc(activeOrder,"quote"))}>{t.printQuote}</button>
                       <button style={S.docBtn} onClick={()=>openPrint(genCustomerDoc(activeOrder,"confirm"))}>{t.printConfirm}</button>
+                      <button style={{...S.docBtn,background:"#EEF1FF",borderColor:"#4361EE",color:"#4361EE"}} onClick={()=>openPrint(genOrderPDF(activeOrder))}>
+                        {lang==="zh"?"PDF / 儲存":"PDF / Save"}
+                      </button>
                       <button style={{...S.docBtn,background:"rgba(37,211,102,0.1)",borderColor:"rgba(37,211,102,0.35)",color:"#25d366"}} onClick={()=>setShowWA(w=>!w)}>{t.whatsapp}</button>
                       <button style={{...S.docBtn,background:"rgba(75,150,232,0.1)",borderColor:"rgba(75,150,232,0.35)",color:"#4B96E8"}} onClick={()=>sendEmail(activeOrder)}>{t.emailClient}</button>
                     </div>
@@ -1454,7 +1790,24 @@ COVERSYNC
         {tab==="bulk" && <>
           {bulkView==="list" && (
             <div style={S.page}>
-              <div style={S.ph}><div><h2 style={S.pt}>{t.bulkTitle}</h2><div style={S.ps}>{t.bulkSub}</div></div><button style={S.pb} onClick={()=>setBulkView("new")}>{t.newBulk}</button></div>
+              <div style={S.ph}>
+                <div><h2 style={S.pt}>{t.bulkTitle}</h2><div style={S.ps}>{t.bulkSub}</div></div>
+                <div style={{display:"flex",gap:10}}>
+                  {selBulk.length>=2 && (()=>{
+                    const selected = bulkOrders.filter(b=>selBulk.includes(b.id));
+                    const suppliers = [...new Set(selected.map(b=>b.supplier))];
+                    return (
+                      <button style={{...S.pb,background:"#E87C4B"}} onClick={()=>{
+                        if(suppliers.length>1 && !window.confirm(lang==="zh"?`選中訂單來自 ${suppliers.length} 個不同供應商，確定合併？`:`Selected orders from ${suppliers.length} suppliers. Combine anyway?`)) return;
+                        openPrint(genCombinedPO(selected));
+                      }}>
+                        {lang==="zh"?`合併採購單 (${selBulk.length})`:` Combined PO (${selBulk.length})`}
+                      </button>
+                    );
+                  })()}
+                  <button style={S.pb} onClick={()=>setBulkView("new")}>{t.newBulk}</button>
+                </div>
+              </div>
               <div style={S.filterBar}>
                 <div style={S.fg}>
                   <span style={S.fl}>{t.productType}:</span>
@@ -1466,19 +1819,26 @@ COVERSYNC
                   <span style={S.fl}>{t.status}:</span>
                   {[{k:"all",l:t.all},...BULK_STATUSES.map(s=>({k:s.key,l:s.label,c:s.color}))].map(({k,l,c})=><button key={k} className="chip" style={{...S.chip,...(bulkFilter===k?{...S.ca,...(c?{background:c+"33",color:c,borderColor:c+"55"}:{})}:{})}} onClick={()=>setBulkFilter(k)}>{l}</button>)}
                 </div>
+                {selBulk.length>0&&<div style={{fontSize:12,color:"#4361EE"}}>{lang==="zh"?`已選 ${selBulk.length} 張`:`${selBulk.length} selected`} — <button style={{background:"none",border:"none",color:"#888",cursor:"pointer",fontSize:12}} onClick={()=>setSelBulk([])}>{lang==="zh"?"清除":"Clear"}</button></div>}
               </div>
               <div style={S.tw}>
-                <div style={S.th2}>{["ID","TYPE","SUPPLIER","CAR","MATERIAL","QTY","COST","PRICE","STATUS"].map((h,i)=><div key={i} style={{...S.th,flex:[1.1,.8,1,1.4,.9,.5,.7,.7,.9][i]}}>{h}</div>)}</div>
-                {filteredBulk.map(b=>{const st=getBSt(b.status);const low=b.stockQty!==undefined&&b.minStock&&b.stockQty<=b.minStock;return(
-                  <div key={b.id} className="trow" style={{...S.tr,...(low?{borderLeft:"3px solid #E84B4B"}:{})}} onClick={()=>{setActiveBulk(b);setBulkView("detail");}}>
-                    <div style={{...S.td,flex:1.1,color:"#E8B84B",fontFamily:"monospace",fontSize:12,fontWeight:600}}>{b.id}</div>
+                <div style={S.th2}>
+                  <div style={{...S.th,flex:.3}}><input type="checkbox" style={{accentColor:"#4361EE"}} onChange={e=>setSelBulk(e.target.checked?filteredBulk.map(b=>b.id):[])}/></div>
+                  {["ID","TYPE","SUPPLIER","CAR","MATERIAL","QTY","COST","PRICE","STATUS"].map((h,i)=><div key={i} style={{...S.th,flex:[1.1,.8,1,1.4,.9,.5,.7,.7,.9][i]}}>{h}</div>)}
+                </div>
+                {filteredBulk.map(b=>{const st=getBSt(b.status);const low=b.stockQty!==undefined&&b.minStock&&b.stockQty<=b.minStock;const sel=selBulk.includes(b.id);return(
+                  <div key={b.id} className="trow" style={{...S.tr,...(low?{borderLeft:"3px solid #E84B4B"}:{}),...(sel?{background:"#F0F4FF"}:{})}} onClick={()=>{setActiveBulk(b);setBulkView("detail");}}>
+                    <div style={{...S.td,flex:.3}} onClick={e=>e.stopPropagation()}>
+                      <input type="checkbox" checked={sel} onChange={e=>setSelBulk(p=>e.target.checked?[...p,b.id]:p.filter(x=>x!==b.id))} style={{accentColor:"#4361EE"}}/>
+                    </div>
+                    <div style={{...S.td,flex:1.1,color:"#4361EE",fontFamily:"monospace",fontSize:12,fontWeight:600}}>{b.id}</div>
                     <div style={{...S.td,flex:.8,fontSize:11}}><span style={S.ptBadge}>{ptLabel(b.productType)}</span></div>
                     <div style={{...S.td,flex:1,fontWeight:600}}>{b.supplier}</div>
                     <div style={{...S.td,flex:1.4,color:"#777",fontSize:12}}>{b.carMake} {b.carModel} ({b.carYear})</div>
                     <div style={{...S.td,flex:.9,fontSize:12,color:"#666"}}>{lang==="zh"?(b.materialZh||b.material):b.material}</div>
                     <div style={{...S.td,flex:.5}}>{b.qty}{b.unit}</div>
                     <div style={{...S.td,flex:.7,fontFamily:"monospace",fontSize:12}}>{fmtHKD(b.costPerUnit)}</div>
-                    <div style={{...S.td,flex:.7,fontFamily:"monospace",fontSize:12,color:"#4BE8A0"}}>{fmtHKD(b.sellPerUnit)}</div>
+                    <div style={{...S.td,flex:.7,fontFamily:"monospace",fontSize:12,color:"#16A34A"}}>{fmtHKD(b.sellPerUnit)}</div>
                     <div style={{...S.td,flex:.9}}><span style={{...S.sp,background:st.color+"22",color:st.color,borderColor:st.color+"44"}}>{st.icon} {st.label}</span></div>
                   </div>
                 );})}
@@ -1567,7 +1927,7 @@ COVERSYNC
                           <div key={k} style={S.poRow}><span style={{color:"#555"}}>{k}：</span><strong>{v}</strong></div>
                         ))}
                       </div>
-                      <button style={S.sendBtn} onClick={()=>sendPO(activeBulk.id)}>{t.sendPO}</button>
+                      <button style={S.sendBtn} onClick={()=>updateBStWithAlerts(activeBulk.id,"confirmed")}>{t.sendPO}</button>
                     </div>
                   )}
                 </div>
@@ -1833,6 +2193,31 @@ COVERSYNC
           </div>
         )}
       </div>
+
+      {/* Excel Export Modal */}
+      {showExport && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300}} onClick={()=>setShowExport(false)}>
+          <div style={{background:"#fff",borderRadius:16,padding:"28px",width:480,maxHeight:"80vh",overflowY:"auto",boxShadow:"0 16px 60px rgba(0,0,0,0.2)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:16,fontWeight:700,color:"#1a1a2e",marginBottom:4}}>{lang==="zh"?"匯出 Excel":"Export Excel"}</div>
+            <div style={{fontSize:12,color:"#888",marginBottom:16}}>{lang==="zh"?"選擇要匯出的欄位：":"Select columns to export:"}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}>
+              {ALL_COLS.map(col=>(
+                <label key={col.k} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,color:"#333"}}>
+                  <input type="checkbox" checked={selCols.includes(col.k)} style={{accentColor:"#4361EE"}}
+                    onChange={e=>setSelCols(p=>e.target.checked?[...p,col.k]:p.filter(x=>x!==col.k))}/>
+                  {col.l}
+                </label>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <button style={S.gb} onClick={()=>setShowExport(false)}>{t.cancel}</button>
+              <button style={S.pb} onClick={exportExcel} disabled={selCols.length===0}>
+                {lang==="zh"?`匯出 ${orders.length} 張訂單`:`Export ${orders.length} Orders`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
