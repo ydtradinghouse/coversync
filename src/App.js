@@ -402,7 +402,7 @@ const genSupplierPO = (bulk) => `<!DOCTYPE html><html><head><meta charset="UTF-8
   </tfoot>
 </table>
 ${bulk.costPerUnit?`<div style="margin-top:10px;font-size:12px;color:#555">成本價 Cost: HK$${bulk.costPerUnit} / ${bulk.unit} &nbsp;|&nbsp; 總金額 Total: HK$${(bulk.costPerUnit||0)*(bulk.qty||0)}</div>`:""}
-${(bulk.supplierNotes)?`<div class="notes-box"><strong>備注 Notes:</strong> ${bulk.supplierNotes}</div>`:""}
+${(bulk.supplierNote)?`<div class="notes-box"><strong>備注 Notes:</strong> ${bulk.supplierNote}</div>`:""}
 <div class="stamp-area">
   <div class="stamp-box">採購方簽署 Buyer Signature<br><br><br></div>
   <div class="stamp-box">供應商確認 Supplier Confirmation<br><br><br></div>
@@ -1869,28 +1869,6 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                   {selBulk.length>=2 && (()=>{
                     const selected = bulkOrders.filter(b=>selBulk.includes(b.id));
                     const suppliers = [...new Set(selected.map(b=>b.supplier))];
-                    return (
-                      <button style={{...S.pb,background:"#E87C4B"}} onClick={()=>{
-                        if(suppliers.length>1 && !window.confirm(lang==="zh"?`選中訂單來自 ${suppliers.length} 個不同供應商，確定合併？`:`Selected orders from ${suppliers.length} suppliers. Combine anyway?`)) return;
-                        openPrint(genCombinedPO(selected));
-                      }}>
-                        {lang==="zh"?`合併採購單 (${selBulk.length})`:` Combined PO (${selBulk.length})`}
-                      </button>
-                    );
-                  })()}
-                  <button style={S.pb} onClick={()=>setBulkView("new")}>{t.newBulk}</button>
-                </div>
-              </div>
-        {/* ════════ BULK ════════ */}
-        {tab==="bulk" && <>
-          {bulkView==="list" && (
-            <div style={S.page}>
-              <div style={S.ph}>
-                <div><h2 style={S.pt}>{t.bulkTitle}</h2><div style={S.ps}>{t.bulkSub}</div></div>
-                <div style={{display:"flex",gap:10}}>
-                  {selBulk.length>=2 && (()=>{
-                    const selected = bulkOrders.filter(b=>selBulk.includes(b.id));
-                    const suppliers = [...new Set(selected.map(b=>b.supplier))];
                     return(
                       <button style={{...S.pb,background:"#E87C4B"}} onClick={()=>{
                         if(suppliers.length>1 && !window.confirm(lang==="zh"?`選中訂單來自 ${suppliers.length} 個不同供應商，確定合併？`:`Selected orders from ${suppliers.length} suppliers. Combine?`)) return;
@@ -1991,8 +1969,8 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                     <div style={S.fi2}><label style={S.fl2}>{t.eta}</label><input style={S.fin} type="date" value={bForm.eta||""} onChange={e=>setBForm(p=>({...p,eta:e.target.value}))}/></div>
                   </div></div>
                 </div>
-                <div style={S.fs}><div style={S.fst}>{lang==="zh"?"供應商備注（會印入採購單）":"Supplier Notes (appears on PO)"}</div><textarea style={{...S.fin,minHeight:60,resize:"vertical",width:"100%"}} placeholder={lang==="zh"?"特別開口、型號注意事項…":"Special openings, model notes for supplier…"} value={bForm.supplierNotes||""} onChange={e=>setBForm(p=>({...p,supplierNotes:e.target.value}))}/></div>
-                <div style={S.fs}><div style={S.fst}>{lang==="zh"?"內部備注（不印入採購單）":"Internal Notes (not on PO)"}</div><textarea style={{...S.fin,minHeight:60,resize:"vertical",width:"100%"}} placeholder={lang==="zh"?"Sales 內部跟進事項…":"Internal follow-up notes for team…"} value={bForm.internalNotes||""} onChange={e=>setBForm(p=>({...p,internalNotes:e.target.value}))}/></div>
+                <div style={S.fs}><div style={S.fst}>{lang==="zh"?"供應商備注（會印入採購單）":"Supplier Notes (appears on PO)"}</div><textarea style={{...S.fin,minHeight:60,resize:"vertical",width:"100%"}} placeholder={lang==="zh"?"特別開口、型號注意事項…":"Special openings, model notes for supplier…"} value={bForm.supplierNote||""} onChange={e=>setBForm(p=>({...p,supplierNote:e.target.value}))}/></div>
+                <div style={S.fs}><div style={S.fst}>{lang==="zh"?"內部備注（不印入採購單）":"Internal Notes (not on PO)"}</div><textarea style={{...S.fin,minHeight:60,resize:"vertical",width:"100%"}} placeholder={lang==="zh"?"Sales 內部跟進事項…":"Internal follow-up notes for team…"} value={bForm.internalNote||""} onChange={e=>setBForm(p=>({...p,internalNote:e.target.value}))}/></div>
                 <div style={{display:"flex",justifyContent:"flex-end",gap:12,marginTop:8}}>
                   <button style={S.gb} onClick={()=>setBulkView("list")}>{t.cancel}</button>
                   <button style={S.pb} onClick={saveBulk} disabled={!bForm.supplier||!bForm.carModel}>{t.createDraft}</button>
@@ -2031,8 +2009,8 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                         <div style={S.ir}><span>{t.eta}</span><span>{activeBulk.eta||"—"}</span></div>
                       </div>
                     </div>
-                    {activeBulk.supplierNotes&&<div style={{...S.nb,background:"#FFF8EE",borderColor:"#FFD580"}}><span style={{color:"#b87800",fontSize:11,letterSpacing:2,fontWeight:700}}>供應商備注 </span>{activeBulk.supplierNotes}</div>}
-                    {activeBulk.internalNotes&&<div style={{...S.nb,marginTop:6}}><span style={{color:"#555",fontSize:11,letterSpacing:2}}>內部備注 </span>{activeBulk.internalNotes}</div>}
+                    {activeBulk.supplierNote&&<div style={{...S.nb,background:"#FFF8EE",borderColor:"#FFD580"}}><span style={{color:"#b87800",fontSize:11,letterSpacing:2,fontWeight:700}}>供應商備注 </span>{activeBulk.supplierNote}</div>}
+                    {activeBulk.internalNote&&<div style={{...S.nb,marginTop:6}}><span style={{color:"#555",fontSize:11,letterSpacing:2}}>內部備注 </span>{activeBulk.internalNote}</div>}
                     {activeBulk.confirmedDate&&<div style={S.ir}><span style={{fontSize:12,color:"#888"}}>入貨日期</span><span style={{fontWeight:600,color:"#E87C4B"}}>{activeBulk.confirmedDate}</span></div>}
                     <div style={{display:"flex",gap:8,marginTop:14}}>
                       <button style={S.docBtn} onClick={()=>openPrint(genSupplierPO(activeBulk))}>{t.printPO}</button>
@@ -2042,7 +2020,7 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                     <div style={S.poCard}>
                       <div style={S.poTitle}>{t.poPreview}</div>
                       <div style={S.poBody}>
-                        {[[lang==="zh"?"供應商":"Supplier",activeBulk.supplier],[lang==="zh"?"車款":"Vehicle",`${activeBulk.carMake} ${activeBulk.carModel} (${activeBulk.carYear})`],[lang==="zh"?"產品":"Product",ptLabel(activeBulk.productType)],[lang==="zh"?"物料":"Material",`${lang==="zh"?(activeBulk.materialZh||activeBulk.material):activeBulk.material} — ${lang==="zh"?(activeBulk.colorZh||activeBulk.color):activeBulk.color}`],[lang==="zh"?"數量":"Quantity",`${activeBulk.qty} ${activeBulk.unit}`],[lang==="zh"?"成本":"Cost",fmtHKD(activeBulk.costPerUnit)+" / "+activeBulk.unit],[lang==="zh"?"要求到貨":"Required ETA",activeBulk.eta||"—"],activeBulk.supplierNotes&&[lang==="zh"?"供應商備注":"Supplier Notes",activeBulk.supplierNotes]].filter(Boolean).map(([k,v])=>(
+                        {[[lang==="zh"?"供應商":"Supplier",activeBulk.supplier],[lang==="zh"?"車款":"Vehicle",`${activeBulk.carMake} ${activeBulk.carModel} (${activeBulk.carYear})`],[lang==="zh"?"產品":"Product",ptLabel(activeBulk.productType)],[lang==="zh"?"物料":"Material",`${lang==="zh"?(activeBulk.materialZh||activeBulk.material):activeBulk.material} — ${lang==="zh"?(activeBulk.colorZh||activeBulk.color):activeBulk.color}`],[lang==="zh"?"數量":"Quantity",`${activeBulk.qty} ${activeBulk.unit}`],[lang==="zh"?"成本":"Cost",fmtHKD(activeBulk.costPerUnit)+" / "+activeBulk.unit],[lang==="zh"?"要求到貨":"Required ETA",activeBulk.eta||"—"],activeBulk.supplierNote&&[lang==="zh"?"供應商備注":"Supplier Notes",activeBulk.supplierNote]].filter(Boolean).map(([k,v])=>(
                           <div key={k} style={S.poRow}><span style={{color:"#555"}}>{k}：</span><strong>{v}</strong></div>
                         ))}
                       </div>
