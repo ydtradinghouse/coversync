@@ -92,10 +92,11 @@ const T = {
     stFactShip:"已發貨到集運", stTransit:"集運已發貨", stArrived:"到貨",
     stNotified:"已通知客人", stDone:"完成",
     stQC:"QC檢查", stReady:"待交收", stDelivered:"已完成", stIssue:"有問題",
-    bsDraft:"草稿", bsSent:"已發出", bsPending:"待確認", bsConfirmed:"已確認", bsProducing:"生產中",
+    bsDraft:"草稿", bsSent:"已發出", bsPending:"待確認採購訂單", bsConfirmed:"已確認並生產中", bsProducing:"生產中",
     bsShipped:"已發貨", bsFactShip:"工廠發貨", bsTransit:"已集運發貨", bsArrived:"到貨", bsShelved:"已上架", bsDone:"完成", bsIssue:"有問題",
-    internalNote:"內部備注（Sales）", supplierNote:"供應商備注", arrivalDate:"入貨日期",
-    alertOrderDate:"呈上大貨訂單日期", alertSubmitted:"已呈上採購訂單", alertNoOrder:"不下單", alertArchived:"已存檔",
+    bsDraftTab:"待採購", bsPendingTab:"待確認採購訂單", bsConfirmedTab:"已確認並生產中", bsShippedTab:"已發貨", bsArrivedTab:"到貨",
+    internalNote:"內部備注（Sales）", supplierNote:"供應商備注", arrivalDate:"預計到貨日期",
+    alertOrderDate:"建議補貨日期", alertSubmitted:"已呈上採購訂單", alertNoOrder:"不下單", alertArchived:"已存檔",
     seatsFull5:"全套 5座", seatsFull7:"全套 7座", seatsFront:"前排 2座",
     seatsRear:"後排", seatsDriver:"司機位",
     // product type labels
@@ -147,10 +148,11 @@ const T = {
     stFactShip:"Shipped to Forwarder", stTransit:"Forwarder Shipped", stArrived:"Arrived",
     stNotified:"Client Notified", stDone:"Completed",
     stQC:"QC Check", stReady:"Ready", stDelivered:"Delivered", stIssue:"Issue",
-    bsDraft:"Draft", bsSent:"Sent", bsPending:"Pending", bsConfirmed:"Confirmed", bsProducing:"In Production",
+    bsDraft:"Draft", bsSent:"Sent", bsPending:"PO Pending Confirmation", bsConfirmed:"Confirmed & In Production", bsProducing:"In Production",
     bsShipped:"Shipped", bsFactShip:"Factory Shipped", bsTransit:"In Transit", bsArrived:"Arrived", bsShelved:"Shelved", bsDone:"Completed", bsIssue:"Issue",
-    internalNote:"Internal Note (Sales)", supplierNote:"Supplier Note", arrivalDate:"Arrival Date",
-    alertOrderDate:"PO Submitted Date", alertSubmitted:"PO Submitted", alertNoOrder:"Not Ordering", alertArchived:"Archived",
+    bsDraftTab:"To Order", bsPendingTab:"PO Pending", bsConfirmedTab:"Confirmed & Producing", bsShippedTab:"Shipped", bsArrivedTab:"Arrived",
+    internalNote:"Internal Note (Sales)", supplierNote:"Supplier Note", arrivalDate:"Est. Arrival Date",
+    alertOrderDate:"Suggested Order Date", alertSubmitted:"PO Submitted", alertNoOrder:"Not Ordering", alertArchived:"Archived",
     seatsFull5:"Full Set (5 seats)", seatsFull7:"Full Set (7 seats)", seatsFront:"Front 2 Seats",
     seatsRear:"Rear Seats", seatsDriver:"Driver Only",
     pt_seat:"Seat Cover", pt_mat:"Floor Mat", pt_carplay:"CarPlay",
@@ -185,12 +187,12 @@ const getOrderStatuses = (t) => [
 ];
 
 const getBulkStatuses = (t) => [
-  { key:"pending",   color:"#888",    icon:"○", label:t.bsPending,   tab:"pending" },
-  { key:"confirmed", color:"#4BE8A0", icon:"✓", label:t.bsConfirmed, tab:"confirmed" },
-  { key:"producing", color:"#B44BE8", icon:"◈", label:t.bsProducing, tab:"producing" },
-  { key:"shipped",   color:"#4BB5E8", icon:"◉", label:t.bsShipped,   tab:"shipped" },
-  { key:"done",      color:"#16A34A", icon:"✓", label:t.bsDone,      tab:"done" },
-  { key:"issue",     color:"#E84B4B", icon:"⚠", label:t.bsIssue,    tab:"pending" },
+  { key:"draft",      color:"#888",    icon:"○", label:t.bsDraft,      tab:"draft" },
+  { key:"pending",    color:"#E8B84B", icon:"◎", label:t.bsPending,    tab:"pending" },
+  { key:"confirmed",  color:"#B44BE8", icon:"◈", label:t.bsConfirmed,  tab:"confirmed" },
+  { key:"shipped",    color:"#4BB5E8", icon:"◉", label:t.bsShipped,    tab:"shipped" },
+  { key:"arrived",    color:"#16A34A", icon:"●", label:t.bsArrived,    tab:"arrived" },
+  { key:"issue",      color:"#E84B4B", icon:"⚠", label:t.bsIssue,     tab:"draft" },
 ];
 
 const CAR_MAKES = ["Toyota","Honda","BMW","Mercedes","Audi","Lexus","Tesla","Hyundai","Kia","Mazda","Ford","Nissan","Other / 其他"];
@@ -676,6 +678,18 @@ export default function App() {
 
   // Settings — must be declared before MATERIALS/COLORS
   const [settingsCarMakes,   setSettingsCarMakes]   = useState(CAR_MAKES);
+  const [settingsCarModels,  setSettingsCarModels]  = useState([
+    {en:"Alphard",zh:"阿法","make":"Toyota"},{en:"Vellfire",zh:"威爾法",make:"Toyota"},
+    {en:"RAV4",zh:"RAV4",make:"Toyota"},{en:"Camry",zh:"凱美瑞",make:"Toyota"},
+    {en:"HiLux",zh:"海力士",make:"Toyota"},{en:"LandCruiser",zh:"陸地巡洋艦",make:"Toyota"},
+    {en:"CR-V",zh:"CR-V",make:"Honda"},{en:"Civic",zh:"思域",make:"Honda"},{en:"Accord",zh:"雅閣",make:"Honda"},
+    {en:"X5",zh:"X5",make:"BMW"},{en:"3 Series",zh:"3系",make:"BMW"},{en:"5 Series",zh:"5系",make:"BMW"},
+    {en:"C-Class",zh:"C級",make:"Mercedes"},{en:"E-Class",zh:"E級",make:"Mercedes"},
+    {en:"Model 3",zh:"Model 3",make:"Tesla"},{en:"Model Y",zh:"Model Y",make:"Tesla"},
+    {en:"Tucson",zh:"途勝",make:"Hyundai"},{en:"Santa Fe",zh:"勝達",make:"Hyundai"},
+    {en:"Sportage",zh:"智跑",make:"Kia"},{en:"Sorento",zh:"索蘭托",make:"Kia"},
+    {en:"Mazda3",zh:"馬自達3",make:"Mazda"},{en:"CX-5",zh:"CX-5",make:"Mazda"},
+  ]);
   const [settingsMaterialsEn,setSettingsMaterialsEn]= useState(MATERIALS_MAP.en);
   const [settingsMaterialsZh,setSettingsMaterialsZh]= useState(MATERIALS_MAP.zh);
   const [settingsColorsEn,   setSettingsColorsEn]   = useState(COLORS_MAP.en);
@@ -685,6 +699,7 @@ export default function App() {
   const [settingsSteerSizes, setSettingsSteerSizes] = useState(STEER_SIZES);
   const [settingsProductTypes, setSettingsProductTypes] = useState(DEFAULT_PRODUCT_TYPES);
   const [settingsInput, setSettingsInput] = useState({});
+  const [trackingAlerts, setTrackingAlerts] = useState([]); // AusPost arrival notifications
 
   // Derive PRODUCT_TYPES from settings
   const PRODUCT_TYPES = settingsProductTypes.map(p=>p.key);
@@ -782,6 +797,29 @@ export default function App() {
     };
     loadAll();
   }, []);
+
+  // ── AusPost tracking: check if parcels arrived in Australia ──
+  useEffect(() => {
+    const checkTracking = async () => {
+      const transit = orders.filter(o=>o.status==="transit"&&o.shipNo);
+      for (const order of transit) {
+        try {
+          const r = await fetch(`https://t.17track.net/en#nums=${order.shipNo}`);
+          // Since we can't parse 17track directly, we use a simple heuristic:
+          // If shipDate was >14 days ago for international, show alert
+          if (order.shipDate) {
+            const daysSinceShip = Math.ceil((new Date()-new Date(order.shipDate))/(1000*60*60*24));
+            if (daysSinceShip >= 14 && !order.auspostAlerted) {
+              setTrackingAlerts(p=>[...p.filter(x=>x.id!==order.id),{id:order.id,client:order.client,shipNo:order.shipNo,msg:lang==="zh"?`${order.client} 的包裹 (${order.shipNo}) 發貨已${daysSinceShip}天，請查看是否已到達澳洲`:`${order.client}'s parcel (${order.shipNo}) shipped ${daysSinceShip} days ago — check if arrived in Australia`}]);
+            }
+          }
+        } catch(e) {}
+      }
+    };
+    if (orders.length > 0) checkTracking();
+    const interval = setInterval(checkTracking, 60*60*1000); // check hourly
+    return () => clearInterval(interval);
+  }, [orders]);
 
   // ── Supabase: Save settings helper ──
   const saveSettingsToCloud = useCallback(async (updates) => {
@@ -936,11 +974,22 @@ COVERSYNC
   // ── Bulk helpers ──
   const filteredBulk = bulkOrders.filter(b=>(bulkFilter==="all"||b.status===bulkFilter)&&(bulkPtFilter==="all"||b.productType===bulkPtFilter));
 
+  const nextBulkNum = () => {
+    const nums = bulkOrders.map(b=>{
+      const n = parseInt((b.id||"").replace(/[^0-9]/g,""));
+      return isNaN(n)?0:n;
+    });
+    const max = nums.length>0?Math.max(...nums):0;
+    return "BLK-"+String(max+1).padStart(3,"0");
+  };
+
   const saveBulk = async () => {
-    const b = { ...bForm, id:uid("BLK"), created:NOW, status:"pending", qty:+bForm.qty||0, costPerUnit:+bForm.costPerUnit||0, sellPerUnit:+bForm.sellPerUnit||0, stockQty:+bForm.stockQty||0, minStock:+bForm.minStock||0 };
+    const newId = nextBulkNum();
+    const b = { ...bForm, id:newId, created:NOW, status:"draft", qty:+bForm.qty||0, costPerUnit:+bForm.costPerUnit||0, sellPerUnit:+bForm.sellPerUnit||0, stockQty:+bForm.stockQty||0, minStock:+bForm.minStock||0 };
     setBulkOrders(p=>[b,...p]); setBulkView("list"); setBForm(emptyBulk);
-    await sb.upsert("bulk_orders",b.id,b);
-    flash("✓ "+b.id);
+    setBulkTab("draft");
+    await sb.upsert("bulk_orders",newId,b);
+    flash("✓ "+newId);
   };
 
   const updateBSt = async (id,st) => {
@@ -948,7 +997,7 @@ COVERSYNC
     if(activeBulk?.id===id) setActiveBulk(a=>({...a,status:st}));
     const updated = bulkOrders.find(b=>b.id===id); if(updated) await sb.upsert("bulk_orders",id,{...updated,status:st});
     // Auto-switch to corresponding tab
-    const tabMap = {pending:"pending",confirmed:"confirmed",producing:"producing",shipped:"shipped",done:"done",issue:"pending"};
+    const tabMap = {draft:"draft",pending:"pending",confirmed:"confirmed",shipped:"shipped",arrived:"arrived",issue:"draft"};
     if(tabMap[st]) setBulkTab(tabMap[st]);
     flash(t.updateStatus+" ✓");
   };
@@ -1028,7 +1077,12 @@ COVERSYNC
   };
 
   const createFromAlerts = async (items) => {
-    const newBulks = items.map(a => ({id:uid("BLK"),productType:a.productType||"seat",supplier:a.supplier||"",carMake:a.carMake,carYear:a.carYear,carModel:a.carModel,material:a.material,materialZh:a.materialZh||a.material,color:a.color,colorZh:a.colorZh||a.color,qty:a.suggestQty,unit:"套",costPerUnit:"",sellPerUnit:"",eta:"",stockQty:0,minStock:0,notes:(lang==="zh"?"由Sales缺貨提醒建立":"From stock alert")+(a.reason?"\n原因: "+a.reason:""),status:"pending",created:NOW}));
+    const newBulks = items.map((a,i) => {
+      const nums = bulkOrders.map(b=>{const n=parseInt((b.id||"").replace(/[^0-9]/g,""));return isNaN(n)?0:n;});
+      const max = nums.length>0?Math.max(...nums):0;
+      const newId = "BLK-"+String(max+1+i).padStart(3,"0");
+      return {id:newId,productType:a.productType||"seat",supplier:a.supplier||"",carMake:a.carMake,carYear:a.carYear,carModel:a.carModel,material:a.material,materialZh:a.materialZh||a.material,color:a.color,colorZh:a.colorZh||a.color,qty:a.suggestQty,unit:"套",costPerUnit:"",sellPerUnit:"",eta:"",arrivalDate:"",stockQty:0,minStock:0,internalNote:(lang==="zh"?"由Sales缺貨提醒建立":"From stock alert")+(a.reason?"\n原因: "+a.reason:""),supplierNote:"",status:"draft",created:NOW};
+    });
     setBulkOrders(p=>[...newBulks,...p]);
     await Promise.all(newBulks.map(b=>sb.upsert("bulk_orders",b.id,b)));
     setSelAlerts([]); setTab("bulk"); flash(`✓ ${items.length} draft(s) created`);
@@ -1245,7 +1299,23 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
         </div>
       )}
 
-      {/* Loading screen */}
+      {/* Tracking Alerts */}
+      {trackingAlerts.length>0&&loggedIn&&(
+        <div style={{position:"fixed",top:68,right:16,zIndex:200,display:"flex",flexDirection:"column",gap:8,maxWidth:340}}>
+          {trackingAlerts.map(a=>(
+            <div key={a.id} style={{background:"#fff",border:"1px solid #4BB5E8",borderRadius:10,padding:"12px 14px",boxShadow:"0 4px 20px rgba(0,0,0,0.15)"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#4BB5E8",letterSpacing:1,marginBottom:4}}>AUSPOST 追蹤提醒</div>
+              <div style={{fontSize:12,color:"#333",lineHeight:1.5}}>{a.msg}</div>
+              <div style={{display:"flex",gap:8,marginTop:8}}>
+                <a href={`https://auspost.com.au/mypost/track/#/details/${a.shipNo}`} target="_blank" rel="noreferrer"
+                  style={{fontSize:11,color:"#4361EE",fontWeight:600,textDecoration:"none"}}>AusPost Track</a>
+                <button style={{background:"none",border:"none",color:"#aaa",cursor:"pointer",fontSize:11,fontFamily:"'DM Sans',sans-serif",marginLeft:"auto"}}
+                  onClick={()=>setTrackingAlerts(p=>p.filter(x=>x.id!==a.id))}>✕ 關閉</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {loading && (
         <div style={{position:"fixed",inset:0,background:"#F5F6FA",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:999}}>
           <div style={{fontFamily:"'DM Mono',monospace",fontSize:22,fontWeight:700,color:"#4361EE",letterSpacing:3,marginBottom:16}}>⬡ COVERSYNC</div>
@@ -1866,14 +1936,21 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
               <div style={S.ph}>
                 <div><h2 style={S.pt}>{t.bulkTitle}</h2><div style={S.ps}>{t.bulkSub}</div></div>
                 <div style={{display:"flex",gap:10}}>
-                  {selBulk.length>=2 && (()=>{
+                  {selBulk.length>=1 && bulkTab==="draft" && (()=>{
                     const selected = bulkOrders.filter(b=>selBulk.includes(b.id));
                     const suppliers = [...new Set(selected.map(b=>b.supplier))];
                     return(
-                      <button style={{...S.pb,background:"#E87C4B"}} onClick={()=>{
+                      <button style={{...S.pb,background:"#E87C4B"}} onClick={async()=>{
                         if(suppliers.length>1 && !window.confirm(lang==="zh"?`選中訂單來自 ${suppliers.length} 個不同供應商，確定合併？`:`Selected orders from ${suppliers.length} suppliers. Combine?`)) return;
                         openPrint(genCombinedPO(selected));
-                      }}>{lang==="zh"?`合併採購單 (${selBulk.length})`:`Combined PO (${selBulk.length})`}</button>
+                        // Auto-move selected to "pending" tab after printing
+                        const updated = selected.map(b=>({...b,status:"pending",poPrintedDate:NOW}));
+                        setBulkOrders(p=>p.map(b=>{const u=updated.find(u=>u.id===b.id);return u||b;}));
+                        await Promise.all(updated.map(b=>sb.upsert("bulk_orders",b.id,b)));
+                        setSelBulk([]);
+                        setBulkTab("pending");
+                        flash(lang==="zh"?"採購單已列印，移入待確認":"PO printed — moved to Pending Confirmation");
+                      }}>{lang==="zh"?`合併採購單並發送 (${selBulk.length})`:`Print & Send Combined PO (${selBulk.length})`}</button>
                     );
                   })()}
                   <button style={S.pb} onClick={()=>setBulkView("new")}>{t.newBulk}</button>
@@ -1882,12 +1959,18 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
 
               {/* 5-Tab Navigation */}
               <div style={{display:"flex",gap:0,marginBottom:16,background:"#F8F9FF",borderRadius:10,border:"1px solid #E8ECF4",overflow:"hidden"}}>
-                {[{k:"pending",l:lang==="zh"?"待確認":"Pending"},{k:"confirmed",l:lang==="zh"?"已確認":"Confirmed"},{k:"producing",l:lang==="zh"?"生產中":"Producing"},{k:"shipped",l:lang==="zh"?"已發貨":"Shipped"},{k:"done",l:lang==="zh"?"完成":"Done"}].map(({k,l},idx,arr)=>{
-                  const cnt=bulkOrders.filter(b=>b.status===k||(k==="pending"&&b.status==="issue")).length;
+                {[
+                  {k:"draft",    l:lang==="zh"?"待採購":"To Order"},
+                  {k:"pending",  l:lang==="zh"?"待確認採購":"PO Pending"},
+                  {k:"confirmed",l:lang==="zh"?"確認並生產中":"Confirmed"},
+                  {k:"shipped",  l:lang==="zh"?"已發貨":"Shipped"},
+                  {k:"arrived",  l:lang==="zh"?"到貨":"Arrived"},
+                ].map(({k,l},idx,arr)=>{
+                  const cnt=bulkOrders.filter(b=>b.status===k||(k==="draft"&&b.status==="issue")).length;
                   return(
                     <button key={k} onClick={()=>{setBulkTab(k);setSelBulk([]);}}
-                      style={{flex:1,padding:"11px 8px",border:"none",borderRight:idx<arr.length-1?"1px solid #E8ECF4":"none",background:bulkTab===k?"#fff":"transparent",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:bulkTab===k?700:400,color:bulkTab===k?"#4361EE":"#888",boxShadow:bulkTab===k?"inset 0 -2px 0 #4361EE":"none",transition:"all 0.15s"}}>
-                      {l}{cnt>0&&<span style={{marginLeft:5,background:bulkTab===k?"#4361EE":"#E8ECF4",color:bulkTab===k?"#fff":"#888",borderRadius:10,padding:"1px 6px",fontSize:10}}>{cnt}</span>}
+                      style={{flex:1,padding:"11px 6px",border:"none",borderRight:idx<arr.length-1?"1px solid #E8ECF4":"none",background:bulkTab===k?"#fff":"transparent",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:11,fontWeight:bulkTab===k?700:400,color:bulkTab===k?"#4361EE":"#888",boxShadow:bulkTab===k?"inset 0 -2px 0 #4361EE":"none",transition:"all 0.15s"}}>
+                      {l}{cnt>0&&<span style={{marginLeft:4,background:bulkTab===k?"#4361EE":"#E8ECF4",color:bulkTab===k?"#fff":"#888",borderRadius:10,padding:"1px 5px",fontSize:10}}>{cnt}</span>}
                     </button>
                   );
                 })}
@@ -1904,7 +1987,7 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
               {/* Table */}
               {(()=>{
                 const tabBulks = bulkOrders.filter(b=>{
-                  const inTab = b.status===bulkTab||(bulkTab==="pending"&&b.status==="issue");
+                  const inTab = b.status===bulkTab||(bulkTab==="draft"&&b.status==="issue");
                   const inPt = bulkPtFilter==="all"||b.productType===bulkPtFilter;
                   return inTab&&inPt;
                 });
@@ -2018,24 +2101,67 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                   </div>
                   {(activeBulk.status==="draft"||activeBulk.status==="pending")&&(
                     <div style={S.poCard}>
-                      <div style={S.poTitle}>{t.poPreview}</div>
-                      <div style={S.poBody}>
-                        {[[lang==="zh"?"供應商":"Supplier",activeBulk.supplier],[lang==="zh"?"車款":"Vehicle",`${activeBulk.carMake} ${activeBulk.carModel} (${activeBulk.carYear})`],[lang==="zh"?"產品":"Product",ptLabel(activeBulk.productType)],[lang==="zh"?"物料":"Material",`${lang==="zh"?(activeBulk.materialZh||activeBulk.material):activeBulk.material} — ${lang==="zh"?(activeBulk.colorZh||activeBulk.color):activeBulk.color}`],[lang==="zh"?"數量":"Quantity",`${activeBulk.qty} ${activeBulk.unit}`],[lang==="zh"?"成本":"Cost",fmtHKD(activeBulk.costPerUnit)+" / "+activeBulk.unit],[lang==="zh"?"要求到貨":"Required ETA",activeBulk.eta||"—"],activeBulk.supplierNote&&[lang==="zh"?"供應商備注":"Supplier Notes",activeBulk.supplierNote]].filter(Boolean).map(([k,v])=>(
-                          <div key={k} style={S.poRow}><span style={{color:"#555"}}>{k}：</span><strong>{v}</strong></div>
-                        ))}
+                      <div style={S.poTitle}>
+                        {activeBulk.status==="draft"?(lang==="zh"?"待採購 — 列印採購單":"To Order — Print PO"):(lang==="zh"?"待確認 — 確認已發送":"PO Pending — Confirm Sent")}
                       </div>
-                      <div style={{marginTop:12}}>
-                        <label style={{...S.fl2,display:"block",marginBottom:4}}>{lang==="zh"?"預計入貨日期（確認時填入）":"Confirmed Delivery Date"}</label>
-                        <input type="date" style={{...S.fin,width:"100%",marginBottom:10}}
-                          value={activeBulk.confirmedDate||""}
-                          onChange={async e=>{
-                            const val=e.target.value;
-                            setBulkOrders(p=>p.map(b=>b.id===activeBulk.id?{...b,confirmedDate:val}:b));
-                            setActiveBulk(a=>({...a,confirmedDate:val}));
-                            await sb.upsert("bulk_orders",activeBulk.id,{...activeBulk,confirmedDate:val});
-                          }}/>
-                      </div>
-                      <button style={S.sendBtn} onClick={()=>updateBStWithAlerts(activeBulk.id,"confirmed")}>{t.sendPO}</button>
+
+                      {/* Draft: add supplier note + print */}
+                      {activeBulk.status==="draft"&&(
+                        <>
+                          <div style={{marginBottom:10}}>
+                            <label style={{...S.fl2,display:"block",marginBottom:4}}>{lang==="zh"?"供應商備注（會印入採購單）":"Supplier Notes (on PO)"}</label>
+                            <textarea style={{...S.fin,minHeight:56,resize:"vertical",width:"100%"}}
+                              placeholder={lang==="zh"?"特別開口、型號注意事項…":"Special openings, model notes…"}
+                              value={activeBulk.supplierNote||""}
+                              onChange={async e=>{
+                                const val=e.target.value;
+                                setBulkOrders(p=>p.map(b=>b.id===activeBulk.id?{...b,supplierNote:val}:b));
+                                setActiveBulk(a=>({...a,supplierNote:val}));
+                                await sb.upsert("bulk_orders",activeBulk.id,{...activeBulk,supplierNote:val});
+                              }}/>
+                          </div>
+                          <div style={{marginBottom:10}}>
+                            <label style={{...S.fl2,display:"block",marginBottom:4}}>{t.arrivalDate}</label>
+                            <input type="date" style={{...S.fin,width:"100%"}}
+                              value={activeBulk.arrivalDate||""}
+                              onChange={async e=>{
+                                const val=e.target.value;
+                                setBulkOrders(p=>p.map(b=>b.id===activeBulk.id?{...b,arrivalDate:val}:b));
+                                setActiveBulk(a=>({...a,arrivalDate:val}));
+                                await sb.upsert("bulk_orders",activeBulk.id,{...activeBulk,arrivalDate:val});
+                              }}/>
+                          </div>
+                          <button style={S.sendBtn} onClick={async()=>{
+                            openPrint(genSupplierPO(activeBulk));
+                            await updateBSt(activeBulk.id,"pending");
+                            flash(lang==="zh"?"採購單已列印，移入待確認":"PO printed — moved to Pending");
+                          }}>{lang==="zh"?"列印採購單 → 待確認":"Print PO → Move to Pending"}</button>
+                        </>
+                      )}
+
+                      {/* Pending: confirm sent + date + confirm button */}
+                      {activeBulk.status==="pending"&&(
+                        <>
+                          <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",marginBottom:12,padding:"10px",background:"#EEF1FF",borderRadius:8}}>
+                            <input type="checkbox" checked={!!activeBulk.poSent} style={{width:18,height:18,accentColor:"#4361EE"}}
+                              onChange={async e=>{
+                                const val=e.target.checked;
+                                setBulkOrders(p=>p.map(b=>b.id===activeBulk.id?{...b,poSent:val,poSentDate:val?NOW:b.poSentDate}:b));
+                                setActiveBulk(a=>({...a,poSent:val,poSentDate:val?NOW:a.poSentDate}));
+                                await sb.upsert("bulk_orders",activeBulk.id,{...activeBulk,poSent:val,poSentDate:val?NOW:activeBulk.poSentDate});
+                              }}/>
+                            <div>
+                              <div style={{fontSize:13,fontWeight:700,color:"#4361EE"}}>{lang==="zh"?"已發送給供應商":"Sent to Supplier"}</div>
+                              {activeBulk.poSentDate&&<div style={{fontSize:11,color:"#888"}}>{activeBulk.poSentDate}</div>}
+                            </div>
+                          </label>
+                          <button style={{...S.sendBtn,opacity:activeBulk.poSent?1:0.4}} disabled={!activeBulk.poSent}
+                            onClick={()=>updateBStWithAlerts(activeBulk.id,"confirmed")}>
+                            {lang==="zh"?"確認訂單 → 已確認並生產中":"Confirm → In Production"}
+                          </button>
+                          {!activeBulk.poSent&&<div style={{fontSize:11,color:"#888",textAlign:"center",marginTop:6}}>{lang==="zh"?"請先勾選已發送給供應商":"Confirm sent to supplier first"}</div>}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2045,18 +2171,10 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
 
                     {activeBulk.status==="confirmed"&&(
                       <div style={S.stepBox}>
-                        <div style={S.stepLabel}>{lang==="zh"?"開始生產":"Start Production"}</div>
-                        <button style={{...S.pb,width:"100%",marginTop:8}} onClick={()=>updateBSt(activeBulk.id,"producing")}>
-                          {lang==="zh"?"確認開始生產":"Confirm Production Started"}
-                        </button>
-                      </div>
-                    )}
-
-                    {activeBulk.status==="producing"&&(
-                      <div style={S.stepBox}>
-                        <div style={S.stepLabel}>{lang==="zh"?"工廠發貨日期":"Factory Ship Date"}</div>
+                        <div style={S.stepLabel}>{lang==="zh"?"確認生產中，等待發貨":"In Production — Waiting for Shipment"}</div>
                         <input type="date" style={{...S.fin,width:"100%",marginTop:8}}
                           value={activeBulk.factoryShipDate||""}
+                          placeholder={lang==="zh"?"工廠發貨日期":"Factory ship date"}
                           onChange={async e=>{
                             const val=e.target.value;
                             setBulkOrders(p=>p.map(b=>b.id===activeBulk.id?{...b,factoryShipDate:val}:b));
@@ -2065,7 +2183,7 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                           }}/>
                         {activeBulk.factoryShipDate&&(
                           <button style={{...S.pb,width:"100%",marginTop:8}} onClick={()=>updateBSt(activeBulk.id,"shipped")}>
-                            {lang==="zh"?"確認工廠已發貨":"Confirm Factory Shipped"}
+                            {lang==="zh"?"確認已發貨":"Confirm Shipped"}
                           </button>
                         )}
                       </div>
@@ -2073,27 +2191,27 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
 
                     {activeBulk.status==="shipped"&&(
                       <div style={S.stepBox}>
-                        <div style={S.stepLabel}>{lang==="zh"?"實際入貨日期":"Actual Arrival Date"}</div>
+                        <div style={S.stepLabel}>{lang==="zh"?"已發貨 — 等待到貨":"Shipped — Awaiting Arrival"}</div>
                         <input type="date" style={{...S.fin,width:"100%",marginTop:8}}
-                          value={activeBulk.arrivalDate||""}
+                          value={activeBulk.actualArrivalDate||""}
                           onChange={async e=>{
                             const val=e.target.value;
-                            setBulkOrders(p=>p.map(b=>b.id===activeBulk.id?{...b,arrivalDate:val}:b));
-                            setActiveBulk(a=>({...a,arrivalDate:val}));
-                            await sb.upsert("bulk_orders",activeBulk.id,{...activeBulk,arrivalDate:val});
+                            setBulkOrders(p=>p.map(b=>b.id===activeBulk.id?{...b,actualArrivalDate:val}:b));
+                            setActiveBulk(a=>({...a,actualArrivalDate:val}));
+                            await sb.upsert("bulk_orders",activeBulk.id,{...activeBulk,actualArrivalDate:val});
                           }}/>
-                        {activeBulk.arrivalDate&&(
-                          <button style={{...S.pb,width:"100%",marginTop:8}} onClick={()=>updateBSt(activeBulk.id,"done")}>
-                            {lang==="zh"?"確認已到貨完成":"Confirm Arrived & Done"}
+                        {activeBulk.actualArrivalDate&&(
+                          <button style={{...S.pb,width:"100%",marginTop:8}} onClick={()=>updateBSt(activeBulk.id,"arrived")}>
+                            {lang==="zh"?"確認已到貨":"Confirm Arrived"}
                           </button>
                         )}
                       </div>
                     )}
 
-                    {activeBulk.status==="done"&&(
+                    {activeBulk.status==="arrived"&&(
                       <div style={{...S.stepBox,background:"#F0FDF4",borderColor:"#86EFAC"}}>
-                        <div style={{fontWeight:700,color:"#16A34A"}}>{lang==="zh"?"大貨已完成":"Bulk Order Completed"}</div>
-                        {activeBulk.arrivalDate&&<div style={{fontSize:12,color:"#888",marginTop:4}}>{lang==="zh"?"入貨日期：":"Arrived: "}{activeBulk.arrivalDate}</div>}
+                        <div style={{fontWeight:700,color:"#16A34A"}}>{lang==="zh"?"大貨已到貨完成":"Bulk Order Arrived"}</div>
+                        {activeBulk.actualArrivalDate&&<div style={{fontSize:12,color:"#888",marginTop:4}}>{lang==="zh"?"到貨日期：":"Arrived: "}{activeBulk.actualArrivalDate}</div>}
                       </div>
                     )}
 
@@ -2171,12 +2289,6 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                       <select style={S.fin} value={aForm.reason} onChange={e=>setAForm(p=>({...p,reason:e.target.value}))}>
                         <option value="">-- {lang==="zh"?"請選擇":"Select"} --</option>
                         {t.reasonOptions.map(v=><option key={v}>{v}</option>)}
-                      </select>
-                    </div>
-                    <div style={S.fi2}><label style={S.fl2}>{lang==="zh"?"下單狀態":"Order Status"}</label>
-                      <select style={S.fin} value={aForm.orderStatus||"pending"} onChange={e=>setAForm(p=>({...p,orderStatus:e.target.value}))}>
-                        <option value="pending">{lang==="zh"?"未下單":"Not Ordered"}</option>
-                        <option value="ordered">{lang==="zh"?"已下單":"Ordered"}</option>
                       </select>
                     </div>
                     <div style={S.fi2}><label style={S.fl2}>{lang==="zh"?"建議補貨日期":"Suggested Order Date"}</label>
@@ -2297,11 +2409,11 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                 </div>
               </div>
               {[
-                { title:lang==="zh"?"🚗 車廠品牌":"🚗 Car Makes", items:settingsCarMakes, setItems:setSettingsCarMakes, key:"carMake", bilingual:false },
+                { title:lang==="zh"?"車廠品牌":"Car Makes", items:settingsCarMakes, setItems:setSettingsCarMakes, key:"carMake", bilingual:false },
                 { title:lang==="zh"?"座位配置":"Seat Coverage", items:settingsSeats, setItems:setSettingsSeats, key:"seats", bilingual:false },
                 { title:lang==="zh"?"CarPlay 屏幕尺寸":"CarPlay Screen Sizes", items:settingsScreenSizes, setItems:setSettingsScreenSizes, key:"screen", bilingual:false },
                 { title:lang==="zh"?"方向盤尺寸":"Steering Wheel Sizes", items:settingsSteerSizes, setItems:setSettingsSteerSizes, key:"steer", bilingual:false },
-              ].map(({title,items,setItems,key,bilingual})=>(
+              ].map(({title,items,setItems,key})=>(
                 <div key={key} style={S.settingsCard}>
                   <div style={S.settingsTitle}>{title}</div>
                   <div style={S.settingsList}>
@@ -2322,6 +2434,42 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                   </div>
                 </div>
               ))}
+
+              {/* ── Car Models (bilingual) ── */}
+              <div style={{...S.settingsCard,gridColumn:"1/-1"}}>
+                <div style={S.settingsTitle}>{lang==="zh"?"車型中英對照 Car Models":"Car Models (Bilingual)"}</div>
+                <div style={{fontSize:11,color:"#888",marginBottom:10}}>{lang==="zh"?"中英文車型預設，方便低庫存提醒及大貨管理選擇":"Bilingual car model presets for Stock Alerts & Bulk Orders"}</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:6,marginBottom:12,maxHeight:200,overflowY:"auto"}}>
+                  {settingsCarModels.map((m,idx)=>(
+                    <div key={idx} style={S.settingsItem}>
+                      <div>
+                        <div style={{fontSize:12,color:"#1a1a2e",fontWeight:600}}>{m.en}</div>
+                        <div style={{fontSize:10,color:"#888"}}>{m.zh} · {m.make}</div>
+                      </div>
+                      <button style={S.removeBtn} onClick={()=>setSettingsCarModels(p=>p.filter((_,i)=>i!==idx))}>✕</button>
+                    </div>
+                  ))}
+                </div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",padding:"12px",background:"#F8F9FF",borderRadius:8,border:"1px solid #E8ECF4"}}>
+                  <select style={{...S.fin,flex:1,minWidth:120}} value={settingsInput["modelMake"]||settingsCarMakes[0]}
+                    onChange={e=>setSettingsInput(p=>({...p,modelMake:e.target.value}))}>
+                    {settingsCarMakes.map(v=><option key={v}>{v}</option>)}
+                  </select>
+                  <input style={{...S.fin,flex:1,minWidth:100}} placeholder={lang==="zh"?"英文型號 e.g. Alphard":"English model e.g. Alphard"}
+                    value={settingsInput["modelEn"]||""}
+                    onChange={e=>setSettingsInput(p=>({...p,modelEn:e.target.value}))}/>
+                  <input style={{...S.fin,flex:1,minWidth:100}} placeholder={lang==="zh"?"中文型號 e.g. 阿法":"Chinese e.g. 阿法"}
+                    value={settingsInput["modelZh"]||""}
+                    onChange={e=>setSettingsInput(p=>({...p,modelZh:e.target.value}))}/>
+                  <button style={S.pb} onClick={()=>{
+                    const en=settingsInput["modelEn"]?.trim();
+                    if(!en) return;
+                    setSettingsCarModels(p=>[...p,{en,zh:settingsInput["modelZh"]?.trim()||en,make:settingsInput["modelMake"]||settingsCarMakes[0]}]);
+                    setSettingsInput(p=>({...p,modelEn:"",modelZh:""}));
+                    flash("✓ "+en+" added");
+                  }}>+</button>
+                </div>
+              </div>
 
               {/* ── Materials (bilingual) ── */}
               <div style={S.settingsCard}>
