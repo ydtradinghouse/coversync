@@ -738,20 +738,23 @@ export default function App() {
   const [chanFilter, setChanFilter]     = useState("all");
   const [ptFilter, setPtFilter]         = useState("all");
   const [orderQ, setOrderQ]             = useState("");
+  const [orderTab, setOrderTab]         = useState("all"); // all/pending/confirmed/producing/factship/transit/arrived/notified/done/issue
   const [waLang, setWaLang]             = useState("zh");
   const [showWA, setShowWA]             = useState(false);
-  const [specPopup, setSpecPopup] = useState(null); // order id for spec popup
+  const [specPopup, setSpecPopup] = useState(null);
   const emptyOrder = { productType:"seat", channel:"store", client:"", phone:"", email:"", carMake:CAR_MAKES[0], carYear:"", carModel:"", seats:"", material:"", color:"", colorHistory:[], mat2Material:"", mat2Color:"", layers:"", stitching:"", embroidery:"", screenSize:"", compatible:"", rearCam:"", steerDiam:"", bootWaterproof:"", bootFullWrap:"", itemName:"", specification:"", shieldType:"", deposit:"", total:"", due:"", orderDate:NOW, customId:"", address:"", notes:"", invoiceNo:"", groupId:"", designType:"ORIGINAL", customDesignNote:"" };
   const [oForm, setOForm] = useState(emptyOrder);
 
-  // Bulk
+  // Bulk & PO
   const [bulkOrders, setBulkOrders]   = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]); // PO-001, PO-002...
   const [bulkView, setBulkView]       = useState("list");
   const [activeBulk, setActiveBulk]   = useState(null);
+  const [activePO, setActivePO]       = useState(null);
   const [bulkFilter, setBulkFilter]   = useState("all");
   const [bulkPtFilter, setBulkPtFilter] = useState("all");
   const [selBulk, setSelBulk]         = useState([]);
-  const [bulkTab, setBulkTab]         = useState("pending"); // pending/confirmed/producing/shipped/done
+  const [bulkTab, setBulkTab]         = useState("draft");
   const [alertPtFilter, setAlertPtFilter] = useState("all");
   const emptyBulk = { productType:"seat", supplier:"", carMake:CAR_MAKES[0], carYear:"", carModel:"", material:"", materialZh:"", color:"", colorZh:"", qty:"", unit:"套", costPerUnit:"", sellPerUnit:"", eta:"", arrivalDate:"", stockQty:"", minStock:"", internalNote:"", supplierNote:"" };
 
@@ -769,15 +772,17 @@ export default function App() {
     const loadAll = async () => {
       try {
         setLoading(true);
-        const [ords, bulks, alerts, cfg] = await Promise.all([
+        const [ords, bulks, alerts, pos, cfg] = await Promise.all([
           sb.get("orders"),
           sb.get("bulk_orders"),
           sb.get("stock_alerts"),
+          sb.get("purchase_orders"),
           sb.getSettings("app_settings"),
         ]);
         if (ords?.length)   setOrders(ords);
         if (bulks?.length)  setBulkOrders(bulks);
         if (alerts?.length) setStockAlerts(alerts);
+        if (pos?.length)    setPurchaseOrders(pos);
         if (cfg) {
           if (cfg.carMakes)       setSettingsCarMakes(cfg.carMakes);
           if (cfg.materialsEn)    setSettingsMaterialsEn(cfg.materialsEn);
@@ -833,11 +838,10 @@ export default function App() {
     await sb.saveSettings("app_settings", current);
   }, [settingsCarMakes, settingsMaterialsEn, settingsMaterialsZh, settingsColorsEn, settingsColorsZh, settingsSeats, settingsScreenSizes, settingsSteerSizes, settingsProductTypes]);
   const filteredOrders = orders.filter(o => {
-    const ms = orderFilter==="all" || o.status===orderFilter;
-    const mc = chanFilter==="all"  || o.channel===chanFilter;
+    const ms = orderTab==="all" || o.status===orderTab;
     const mp = ptFilter==="all"    || o.productType===ptFilter;
     const mq = !orderQ || [o.client,o.id,o.carMake,o.carModel,o.phone,o.invoiceNo].some(v=>(v||"").toLowerCase().includes(orderQ.toLowerCase()));
-    return ms&&mc&&mp&&mq;
+    return ms&&mp&&mq;
   });
 
   const nextOrderNum = () => {
@@ -983,6 +987,67 @@ COVERSYNC
     return "BLK-"+String(max+1).padStart(3,"0");
   };
 
+  const nextPONum = () => {
+    const nums = purchaseOrders.map(p=>{
+      const n = parseInt((p.id||"").replace(/[^0-9]/g,""));
+      return isNaN(n)?0:n;
+    });
+    const max = nums.length>0?Math.max(...nums):0;
+    return "PO-"+String(max+1).padStart(3,"0");
+  };
+
+  const createPO = async (selectedBulks) => {
+    const poId = nextPONum();
+    const supplier = selectedBulks[0]?.supplier||"";
+    const po = {
+      id: poId,
+      supplier,
+      items: selectedBulks.map((b,i)=>({...b,itemNo:i+1})),
+      blkIds: selectedBulks.map(b=>b.id),
+      status: "pending", // pending/confirmed/shipped/arrived
+      created: NOW,
+      poSent: false,
+      poSentDate: "",
+      arrivalDate: "",
+      supplierNote: selectedBulks.map(b=>b.supplierNote).filter(Boolean).join("\n"),
+      internalNote: selectedBulks.map(b=>b.internalNote).filter(Boolean).join("\n"),
+    };
+    // Move all selected BLKs to "pending" status with this PO id
+    const updatedBulks = bulkOrders.map(b=>{
+      if(selectedBulks.find(s=>s.id===b.id)) return {...b, status:"pending", poId};
+      return b;
+    });
+    setPurchaseOrders(p=>[po,...p]);
+    setBulkOrders(updatedBulks);
+    await sb.upsert("purchase_orders", poId, po);
+    await Promise.all(selectedBulks.map(b=>sb.upsert("bulk_orders",b.id,{...b,status:"pending",poId})));
+    setSelBulk([]);
+    setBulkTab("pending");
+    flash(`✓ ${poId} ${lang==="zh"?"已建立，移入合併採購待確認":"created — moved to PO Pending"}`);
+    return po;
+  };
+
+  const updatePOSt = async (id, st) => {
+    const po = purchaseOrders.find(p=>p.id===id);
+    if(!po) return;
+    const updated = {...po, status:st};
+    setPurchaseOrders(p=>p.map(x=>x.id===id?updated:x));
+    if(activePO?.id===id) setActivePO(updated);
+    // Also update all BLKs in this PO
+    const statusMap = {confirmed:"confirmed",shipped:"shipped",arrived:"arrived"};
+    if(statusMap[st]) {
+      setBulkOrders(p=>p.map(b=>po.blkIds.includes(b.id)?{...b,status:statusMap[st]}:b));
+      await Promise.all(po.blkIds.map(bid=>{
+        const b=bulkOrders.find(x=>x.id===bid);
+        if(b) return sb.upsert("bulk_orders",bid,{...b,status:statusMap[st]});
+      }));
+    }
+    await sb.upsert("purchase_orders",id,updated);
+    const tabMap={pending:"pending",confirmed:"confirmed",shipped:"shipped",arrived:"arrived"};
+    if(tabMap[st]) setBulkTab(tabMap[st]);
+    flash(lang==="zh"?"採購單狀態已更新":"PO status updated");
+  };
+
   const saveBulk = async () => {
     const newId = nextBulkNum();
     const b = { ...bForm, id:newId, created:NOW, status:"draft", qty:+bForm.qty||0, costPerUnit:+bForm.costPerUnit||0, sellPerUnit:+bForm.sellPerUnit||0, stockQty:+bForm.stockQty||0, minStock:+bForm.minStock||0 };
@@ -1004,7 +1069,72 @@ COVERSYNC
 
   const sendPO = (id) => { updateBSt(id,"confirmed"); flash("PO confirmed / 採購單已確認"); };
 
-  const genCombinedPO = (bulkList) => {
+  const genPODocument = (po) => {
+    const items = po.items || po.blkIds?.map((id,i)=>{const b=bulkOrders.find(x=>x.id===id);return b?{...b,itemNo:i+1}:null;}).filter(Boolean) || [];
+    const rows = items.map(b=>`<tr>
+      <td style="text-align:center;font-weight:700">${b.itemNo||""}</td>
+      <td>${PT_LABELS[b.productType]||b.productType||"—"}</td>
+      <td>${b.carMake} ${b.carModel||""}</td>
+      <td>${b.carYear||"—"}</td>
+      <td>—</td>
+      <td>—</td>
+      <td>${b.materialZh||b.material||"—"}</td>
+      <td>${b.colorZh||b.color||"—"}</td>
+      <td style="font-weight:700">${b.qty} ${b.unit}</td>
+      <td style="text-align:left;font-size:11px">${b.supplierNote||""}</td>
+    </tr>`).join("");
+    const totalQty = items.reduce((s,b)=>s+(+b.qty||0),0);
+    const poSentInfo = po.poSent ? `已發送日期: ${po.poSentDate||"—"}` : "";
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+  body{font-family:'PingFang TC','Microsoft YaHei',Arial,sans-serif;color:#000;margin:0;padding:30px;font-size:13px;}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #4361EE;}
+  .brand{font-size:20px;font-weight:900;color:#4361EE;letter-spacing:3px;}
+  .po-info{text-align:right;}
+  .po-id{font-size:22px;font-weight:700;font-family:monospace;color:#4361EE;}
+  .meta{font-size:12px;color:#555;margin-top:4px;}
+  table{width:100%;border-collapse:collapse;margin-top:12px;}
+  th{background:#4361EE;color:#fff;padding:9px 10px;font-size:11px;text-align:center;border:1px solid #3050cc;}
+  td{padding:8px 10px;border:1px solid #ddd;font-size:12px;text-align:center;vertical-align:middle;}
+  tr:nth-child(even) td{background:#F8F9FF;}
+  .total-row td{font-weight:700;background:#EEF1FF;border-top:2px solid #4361EE;font-size:13px;}
+  .notes{margin-top:14px;background:#FFFBF0;border:1px solid #FFE099;border-radius:6px;padding:12px;font-size:12px;}
+  .stamp-area{margin-top:32px;display:grid;grid-template-columns:1fr 1fr;gap:40px;}
+  .stamp-box{border-top:1px solid #000;padding-top:10px;text-align:center;font-size:12px;color:#555;}
+  @media print{body{padding:15px;}}
+</style></head><body>
+<div class="header">
+  <div>
+    <div class="brand">COVERSYNC</div>
+    <div class="meta">Y&D Trading House · 汽車配件訂製</div>
+  </div>
+  <div class="po-info">
+    <div class="meta">採購訂單 Purchase Order</div>
+    <div class="po-id">${po.id}</div>
+    <div class="meta">供應商: <strong>${po.supplier}</strong></div>
+    <div class="meta">日期: ${po.created||NOW} ${po.arrivalDate?"· 要求到貨: "+po.arrivalDate:""}</div>
+    ${poSentInfo?`<div class="meta">${poSentInfo}</div>`:""}
+  </div>
+</div>
+<table>
+  <thead><tr>
+    <th style="width:35px">No</th><th>產品 Product</th><th>車型 Model</th><th>年份 Year</th>
+    <th>座位 Seats</th><th>款式 Style</th><th>皮料 Material</th><th>顏色 Color</th>
+    <th>數量 Qty</th><th>備注 Note</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+  <tfoot><tr class="total-row">
+    <td colspan="8" style="text-align:right">合計 Total</td>
+    <td>${totalQty} 套</td><td></td>
+  </tr></tfoot>
+</table>
+${po.supplierNote?`<div class="notes"><strong>特別備注 Special Notes:</strong><br>${po.supplierNote}</div>`:""}
+<div class="stamp-area">
+  <div class="stamp-box">採購方簽署 Buyer Signature<br><br><br><br></div>
+  <div class="stamp-box">供應商確認 Supplier Confirmation<br><br><br><br></div>
+</div>
+</body></html>`;
+  };
     const supplier = bulkList[0]?.supplier||"";
     const rows = bulkList.map((b,i)=>`<tr>
       <td>${i+1}</td>
@@ -1367,8 +1497,39 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
         {tab==="orders" && <>
           {orderView==="list" && (
             <div style={S.page}>
-              <div style={S.ph}><div><h2 style={S.pt}>{t.allOrders}</h2><div style={S.ps}>{t.allOrdersSub}</div></div><button style={S.pb} onClick={()=>setOrderView("new")}>{t.newOrder}</button></div>
-              <div style={S.filterBar}>
+              <div style={S.ph}>
+                <div><h2 style={S.pt}>{t.allOrders}</h2><div style={S.ps}>{t.allOrdersSub}</div></div>
+                <button style={S.pb} onClick={()=>setOrderView("new")}>{t.newOrder}</button>
+              </div>
+
+              {/* 10-Tab Navigation */}
+              <div style={{display:"flex",flexWrap:"wrap",gap:0,marginBottom:14,background:"#F8F9FF",borderRadius:10,border:"1px solid #E8ECF4",overflow:"hidden"}}>
+                {[
+                  {k:"all",      l:lang==="zh"?"全部":"All"},
+                  {k:"pending",  l:lang==="zh"?"待確認":"Pending"},
+                  {k:"confirmed",l:lang==="zh"?"已確認":"Confirmed"},
+                  {k:"producing",l:lang==="zh"?"生產中":"Producing"},
+                  {k:"factship", l:lang==="zh"?"已發貨到集運":"To Forwarder"},
+                  {k:"transit",  l:lang==="zh"?"集運已發貨":"Shipped"},
+                  {k:"arrived",  l:lang==="zh"?"到貨":"Arrived"},
+                  {k:"notified", l:lang==="zh"?"已通知":"Notified"},
+                  {k:"done",     l:lang==="zh"?"完成":"Done"},
+                  {k:"issue",    l:lang==="zh"?"有問題":"Issue"},
+                ].map(({k,l},idx,arr)=>{
+                  const cnt = k==="all" ? orders.length : orders.filter(o=>o.status===k).length;
+                  const active = orderTab===k;
+                  const stColor = ORDER_STATUSES.find(s=>s.key===k)?.color||"#4361EE";
+                  return(
+                    <button key={k} onClick={()=>setOrderTab(k)}
+                      style={{flex:"1 1 9%",minWidth:70,padding:"9px 4px",border:"none",borderRight:idx<arr.length-1?"1px solid #E8ECF4":"none",background:active?"#fff":"transparent",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:10,fontWeight:active?700:400,color:active?stColor:"#888",boxShadow:active?`inset 0 -2px 0 ${stColor}`:"none",transition:"all 0.15s"}}>
+                      {l}{cnt>0&&<span style={{marginLeft:3,background:active?stColor:"#E8ECF4",color:active?"#fff":"#888",borderRadius:10,padding:"1px 5px",fontSize:9,fontWeight:700}}>{cnt}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Search + product type filter */}
+              <div style={{...S.filterBar,marginBottom:10}}>
                 <input style={S.si} placeholder={t.searchPlaceholder} value={orderQ} onChange={e=>setOrderQ(e.target.value)}/>
                 <div style={S.fg}>
                   <span style={S.fl}>{t.productType}:</span>
@@ -1376,19 +1537,8 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                     <button key={k} className="chip" style={{...S.chip,...(ptFilter===k?S.ca:{})}} onClick={()=>setPtFilter(k)}>{l}</button>
                   ))}
                 </div>
-                <div style={S.fg}>
-                  <span style={S.fl}>{t.channel}:</span>
-                  {[{k:"all",l:t.all},{k:"store",l:t.store},{k:"online",l:t.online}].map(({k,l})=>(
-                    <button key={k} className="chip" style={{...S.chip,...(chanFilter===k?S.ca:{})}} onClick={()=>setChanFilter(k)}>{l}</button>
-                  ))}
-                </div>
-                <div style={S.fg}>
-                  <span style={S.fl}>{t.status}:</span>
-                  {[{k:"all",l:t.all,c:"#888"},...ORDER_STATUSES.map(s=>({k:s.key,l:s.label,c:s.color}))].map(({k,l,c})=>(
-                    <button key={k} className="chip" style={{...S.chip,...(orderFilter===k?{...S.ca,background:c+"33",color:c,borderColor:c+"66"}:{})}} onClick={()=>setOrderFilter(k)}>{l}</button>
-                  ))}
-                </div>
               </div>
+
               <div style={S.tw}>
                 <div style={S.th2}>{["ID","INV NO","TYPE","CLIENT","CAR / SPEC","STATUS","ETD","TOTAL"].map((h,i)=><div key={i} style={{...S.th,flex:[1.2,.8,.8,1,2,.9,.9,.7][i]}}>{h}</div>)}</div>
                 {filteredOrders.map(o=>{const st=getSt(o.status);return(
@@ -1941,16 +2091,10 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                     const suppliers = [...new Set(selected.map(b=>b.supplier))];
                     return(
                       <button style={{...S.pb,background:"#E87C4B"}} onClick={async()=>{
-                        if(suppliers.length>1 && !window.confirm(lang==="zh"?`選中訂單來自 ${suppliers.length} 個不同供應商，確定合併？`:`Selected orders from ${suppliers.length} suppliers. Combine?`)) return;
-                        openPrint(genCombinedPO(selected));
-                        // Auto-move selected to "pending" tab after printing
-                        const updated = selected.map(b=>({...b,status:"pending",poPrintedDate:NOW}));
-                        setBulkOrders(p=>p.map(b=>{const u=updated.find(u=>u.id===b.id);return u||b;}));
-                        await Promise.all(updated.map(b=>sb.upsert("bulk_orders",b.id,b)));
-                        setSelBulk([]);
-                        setBulkTab("pending");
-                        flash(lang==="zh"?"採購單已列印，移入待確認":"PO printed — moved to Pending Confirmation");
-                      }}>{lang==="zh"?`合併採購單並發送 (${selBulk.length})`:`Print & Send Combined PO (${selBulk.length})`}</button>
+                        if(suppliers.length>1 && !window.confirm(lang==="zh"?`選中訂單來自 ${suppliers.length} 個不同供應商，確定合併？`:`Orders from ${suppliers.length} suppliers. Combine?`)) return;
+                        const po = await createPO(selected);
+                        openPrint(genPODocument(po));
+                      }}>{lang==="zh"?`建立採購單 PO (${selBulk.length}項)`:`Create PO (${selBulk.length} items)`}</button>
                     );
                   })()}
                   <button style={S.pb} onClick={()=>setBulkView("new")}>{t.newBulk}</button>
@@ -1960,20 +2104,18 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
               {/* 5-Tab Navigation */}
               <div style={{display:"flex",gap:0,marginBottom:16,background:"#F8F9FF",borderRadius:10,border:"1px solid #E8ECF4",overflow:"hidden"}}>
                 {[
-                  {k:"draft",    l:lang==="zh"?"待採購":"To Order"},
-                  {k:"pending",  l:lang==="zh"?"待確認採購":"PO Pending"},
-                  {k:"confirmed",l:lang==="zh"?"確認並生產中":"Confirmed"},
-                  {k:"shipped",  l:lang==="zh"?"已發貨":"Shipped"},
-                  {k:"arrived",  l:lang==="zh"?"到貨":"Arrived"},
-                ].map(({k,l},idx,arr)=>{
-                  const cnt=bulkOrders.filter(b=>b.status===k||(k==="draft"&&b.status==="issue")).length;
-                  return(
-                    <button key={k} onClick={()=>{setBulkTab(k);setSelBulk([]);}}
-                      style={{flex:1,padding:"11px 6px",border:"none",borderRight:idx<arr.length-1?"1px solid #E8ECF4":"none",background:bulkTab===k?"#fff":"transparent",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:11,fontWeight:bulkTab===k?700:400,color:bulkTab===k?"#4361EE":"#888",boxShadow:bulkTab===k?"inset 0 -2px 0 #4361EE":"none",transition:"all 0.15s"}}>
-                      {l}{cnt>0&&<span style={{marginLeft:4,background:bulkTab===k?"#4361EE":"#E8ECF4",color:bulkTab===k?"#fff":"#888",borderRadius:10,padding:"1px 5px",fontSize:10}}>{cnt}</span>}
-                    </button>
-                  );
-                })}
+                  {k:"draft",    l:lang==="zh"?"待採購":"To Order",      cnt:bulkOrders.filter(b=>b.status==="draft"||b.status==="issue").length},
+                  {k:"pending",  l:lang==="zh"?"合併採購待確認":"PO Pending", cnt:purchaseOrders.filter(p=>p.status==="pending").length},
+                  {k:"confirmed",l:lang==="zh"?"確認並生產中":"Confirmed",   cnt:purchaseOrders.filter(p=>p.status==="confirmed").length},
+                  {k:"shipped",  l:lang==="zh"?"已發貨":"Shipped",         cnt:purchaseOrders.filter(p=>p.status==="shipped").length},
+                  {k:"arrived",  l:lang==="zh"?"到貨":"Arrived",           cnt:purchaseOrders.filter(p=>p.status==="arrived").length},
+                ].map(({k,l,cnt},idx,arr)=>(
+                  <button key={k} onClick={()=>{setBulkTab(k);setSelBulk([]);}}
+                    style={{flex:1,padding:"11px 6px",border:"none",borderRight:idx<arr.length-1?"1px solid #E8ECF4":"none",background:bulkTab===k?"#fff":"transparent",cursor:"pointer",fontFamily:"'DM Sans',sans-serif",fontSize:11,fontWeight:bulkTab===k?700:400,color:bulkTab===k?"#4361EE":"#888",boxShadow:bulkTab===k?"inset 0 -2px 0 #4361EE":"none",transition:"all 0.15s"}}>
+                    {l}{cnt>0&&<span style={{marginLeft:4,background:bulkTab===k?"#4361EE":"#E8ECF4",color:bulkTab===k?"#fff":"#888",borderRadius:10,padding:"1px 5px",fontSize:10}}>{cnt}</span>}
+                  </button>
+                ))}
+              </div>
               </div>
 
               {/* Product type filter */}
@@ -1984,10 +2126,10 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                 ))}
               </div>
 
-              {/* Table */}
-              {(()=>{
+              {/* Table — draft shows BLKs, others show POs */}
+              {bulkTab==="draft" ? (()=>{
                 const tabBulks = bulkOrders.filter(b=>{
-                  const inTab = b.status===bulkTab||(bulkTab==="draft"&&b.status==="issue");
+                  const inTab = b.status==="draft"||b.status==="issue";
                   const inPt = bulkPtFilter==="all"||b.productType===bulkPtFilter;
                   return inTab&&inPt;
                 });
@@ -1995,11 +2137,10 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                   <div style={S.tw}>
                     <div style={S.th2}>
                       <div style={{...S.th,flex:.3}}><input type="checkbox" style={{accentColor:"#4361EE"}} onChange={e=>setSelBulk(e.target.checked?tabBulks.map(b=>b.id):[])}/></div>
-                      {["ID","TYPE","SUPPLIER","CAR","MATERIAL","QTY","日期","STATUS","供應商備注"].map((h,i)=><div key={i} style={{...S.th,flex:[1,.8,1,1.2,.9,.5,.8,.8,1.2][i]}}>{h}</div>)}
+                      {["ID","TYPE","SUPPLIER","CAR","MATERIAL","QTY","ETD","供應商備注"].map((h,i)=><div key={i} style={{...S.th,flex:[1,.8,1,1.2,.9,.5,.8,1.2][i]}}>{h}</div>)}
                     </div>
                     {tabBulks.map(b=>{
                       const st=getBSt(b.status);const sel=selBulk.includes(b.id);
-                      const dateShow=b.arrivalDate||b.eta||"";
                       return(
                         <div key={b.id} className="trow" style={{...S.tr,...(sel?{background:"#F0F4FF"}:{})}} onClick={()=>{setActiveBulk(b);setBulkView("detail");}}>
                           <div style={{...S.td,flex:.3}} onClick={e=>e.stopPropagation()}>
@@ -2011,16 +2152,187 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
                           <div style={{...S.td,flex:1.2,color:"#777",fontSize:12}}>{b.carMake} {b.carModel} {b.carYear}</div>
                           <div style={{...S.td,flex:.9,fontSize:12}}>{lang==="zh"?(b.materialZh||b.material):b.material}</div>
                           <div style={{...S.td,flex:.5,fontWeight:600}}>{b.qty}{b.unit}</div>
-                          <div style={{...S.td,flex:.8,fontSize:11,color:dateShow?"#E87C4B":"#bbb"}}>{dateShow||"—"}</div>
-                          <div style={{...S.td,flex:.8}}><span style={{...S.sp,background:st.color+"22",color:st.color,borderColor:st.color+"44",fontSize:10}}>{st.label}</span></div>
+                          <div style={{...S.td,flex:.8,fontSize:11,color:b.arrivalDate?"#E87C4B":"#bbb"}}>{b.arrivalDate||b.eta||"—"}</div>
                           <div style={{...S.td,flex:1.2,fontSize:11,color:"#666",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.supplierNote||"—"}</div>
                         </div>
                       );
                     })}
-                    {tabBulks.length===0&&<div style={S.er}>{lang==="zh"?"此分頁暫無記錄":"No records in this tab"}</div>}
+                    {tabBulks.length===0&&<div style={S.er}>{lang==="zh"?"待採購清單為空":"No items to order"}</div>}
+                  </div>
+                );
+              })() : (()=>{
+                // Show PO list for pending/confirmed/shipped/arrived
+                const tabPOs = purchaseOrders.filter(p=>p.status===bulkTab);
+                return(
+                  <div style={S.tw}>
+                    <div style={S.th2}>
+                      {["PO號碼","供應商","項目數","預計到貨","發送狀態","操作"].map((h,i)=><div key={i} style={{...S.th,flex:[1,1.2,.6,.9,1,1][i]}}>{h}</div>)}
+                    </div>
+                    {tabPOs.map(po=>{
+                      const stColor = {pending:"#E8B84B",confirmed:"#B44BE8",shipped:"#4BB5E8",arrived:"#16A34A"}[po.status]||"#888";
+                      const stLabel = {pending:lang==="zh"?"待確認":"Pending",confirmed:lang==="zh"?"已確認":"Confirmed",shipped:lang==="zh"?"已發貨":"Shipped",arrived:lang==="zh"?"到貨":"Arrived"}[po.status]||po.status;
+                      return(
+                        <div key={po.id} className="trow" style={S.tr} onClick={()=>{setActivePO(po);setBulkView("po-detail");}}>
+                          <div style={{...S.td,flex:1,fontFamily:"monospace",fontWeight:700,color:"#4361EE",fontSize:13}}>{po.id}</div>
+                          <div style={{...S.td,flex:1.2,fontWeight:600}}>{po.supplier}</div>
+                          <div style={{...S.td,flex:.6,textAlign:"center"}}>
+                            <span style={{background:"#EEF1FF",color:"#4361EE",borderRadius:10,padding:"2px 8px",fontSize:12,fontWeight:700}}>{po.items?.length||po.blkIds?.length||0} 項</span>
+                          </div>
+                          <div style={{...S.td,flex:.9,fontSize:12,color:po.arrivalDate?"#E87C4B":"#aaa"}}>{po.arrivalDate||"—"}</div>
+                          <div style={{...S.td,flex:1}}>
+                            {po.poSent
+                              ? <span style={{fontSize:11,background:"#DCFCE7",color:"#16A34A",borderRadius:10,padding:"3px 8px",fontWeight:700}}>已發送 {po.poSentDate}</span>
+                              : <span style={{fontSize:11,background:"#FEF3C7",color:"#D97706",borderRadius:10,padding:"3px 8px",fontWeight:700}}>未確認發送</span>
+                            }
+                          </div>
+                          <div style={{...S.td,flex:1}}>
+                            <button style={{...S.docBtn,fontSize:11}} onClick={e=>{e.stopPropagation();openPrint(genPODocument(po));}}>列印</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {tabPOs.length===0&&<div style={S.er}>{lang==="zh"?"此分頁暫無採購單":"No POs in this tab"}</div>}
                   </div>
                 );
               })()}
+            </div>
+          )}
+
+          {bulkView==="po-detail" && activePO && (
+            <div style={S.page}>
+              <button style={S.bb} onClick={()=>setBulkView("list")}>{t.back}</button>
+              <div style={S.dl}>
+                <div>
+                  <div style={S.dc}>
+                    <div style={S.dch}>
+                      <div>
+                        <div style={{fontFamily:"monospace",color:"#4361EE",fontSize:14,fontWeight:700,marginBottom:4}}>{activePO.id}</div>
+                        <div style={{fontSize:22,fontWeight:700,color:"#1a1a2e"}}>{activePO.supplier}</div>
+                        <div style={{fontSize:12,color:"#888",marginTop:4}}>{lang==="zh"?"建立日期":"Created"}: {activePO.created}</div>
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
+                        <span style={{...S.sp,background:"#EEF1FF",color:"#4361EE",borderColor:"#C5CEFF"}}>{(activePO.items||[]).length} {lang==="zh"?"個項目":"items"}</span>
+                        {activePO.poSent
+                          ? <span style={{fontSize:11,background:"#DCFCE7",color:"#16A34A",borderRadius:10,padding:"3px 8px",fontWeight:700}}>已發送 {activePO.poSentDate}</span>
+                          : <span style={{fontSize:11,background:"#FEF3C7",color:"#D97706",borderRadius:10,padding:"3px 8px",fontWeight:700}}>{lang==="zh"?"未確認發送":"Not Sent"}</span>
+                        }
+                      </div>
+                    </div>
+
+                    {/* Items table */}
+                    <div style={{marginBottom:16}}>
+                      <div style={{fontSize:10,color:"#4361EE",letterSpacing:2,fontWeight:700,marginBottom:8}}>{lang==="zh"?"採購項目":"PURCHASE ITEMS"}</div>
+                      <div style={S.tw}>
+                        <div style={S.th2}>
+                          {["No","產品","車型","年份","物料","顏色","數量","供應商備注"].map((h,i)=><div key={i} style={{...S.th,flex:[.4,.8,1.2,.7,.9,.7,.6,1.5][i]}}>{h}</div>)}
+                        </div>
+                        {(activePO.items||[]).map((b,i)=>(
+                          <div key={i} style={{...S.tr,cursor:"default"}}>
+                            <div style={{...S.td,flex:.4,fontWeight:700,color:"#4361EE"}}>{i+1}</div>
+                            <div style={{...S.td,flex:.8}}><span style={S.ptBadge}>{ptLabel(b.productType)}</span></div>
+                            <div style={{...S.td,flex:1.2,fontSize:12}}>{b.carMake} {b.carModel}</div>
+                            <div style={{...S.td,flex:.7,fontSize:12,color:"#777"}}>{b.carYear}</div>
+                            <div style={{...S.td,flex:.9,fontSize:12}}>{b.materialZh||b.material}</div>
+                            <div style={{...S.td,flex:.7,fontSize:12}}>{b.colorZh||b.color}</div>
+                            <div style={{...S.td,flex:.6,fontWeight:700}}>{b.qty}{b.unit}</div>
+                            <div style={{...S.td,flex:1.5,fontSize:11,color:"#666"}}>{b.supplierNote||"—"}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {activePO.supplierNote&&<div style={{...S.nb,background:"#FFF8EE",borderColor:"#FFD580",marginBottom:8}}><span style={{color:"#b87800",fontSize:11,fontWeight:700}}>{t.supplierNote} </span>{activePO.supplierNote}</div>}
+                    {activePO.internalNote&&<div style={S.nb}><span style={{color:"#555",fontSize:11}}>{t.internalNote} </span>{activePO.internalNote}</div>}
+
+                    <div style={{display:"flex",gap:8,marginTop:14}}>
+                      <button style={S.docBtn} onClick={()=>openPrint(genPODocument(activePO))}>{t.printPO}</button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right panel */}
+                <div>
+                  <div style={S.sc}>
+                    <div style={S.sct}>{lang==="zh"?"確認採購單":"Confirm PO"}</div>
+
+                    {/* Sent checkbox */}
+                    <div style={S.stepBox}>
+                      <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",marginBottom:10}}>
+                        <input type="checkbox" checked={!!activePO.poSent} style={{width:18,height:18,accentColor:"#4361EE"}}
+                          onChange={async e=>{
+                            const val=e.target.checked;
+                            const updated={...activePO,poSent:val,poSentDate:val?NOW:activePO.poSentDate};
+                            setPurchaseOrders(p=>p.map(x=>x.id===activePO.id?updated:x));
+                            setActivePO(updated);
+                            await sb.upsert("purchase_orders",activePO.id,updated);
+                          }}/>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:700,color:"#4361EE"}}>{lang==="zh"?"已發送給供應商":"Sent to Supplier"}</div>
+                          {activePO.poSentDate&&<div style={{fontSize:11,color:"#888"}}>{activePO.poSentDate}</div>}
+                        </div>
+                      </label>
+
+                      <div style={S.fi2}>
+                        <label style={S.fl2}>{t.arrivalDate}</label>
+                        <input type="date" style={{...S.fin,marginTop:4}}
+                          value={activePO.arrivalDate||""}
+                          onChange={async e=>{
+                            const val=e.target.value;
+                            const updated={...activePO,arrivalDate:val};
+                            setPurchaseOrders(p=>p.map(x=>x.id===activePO.id?updated:x));
+                            setActivePO(updated);
+                            await sb.upsert("purchase_orders",activePO.id,updated);
+                          }}/>
+                      </div>
+
+                      <button style={{...S.pb,width:"100%",marginTop:12,opacity:activePO.poSent?1:0.4}}
+                        disabled={!activePO.poSent}
+                        onClick={()=>updatePOSt(activePO.id,"confirmed")}>
+                        {lang==="zh"?"確認 → 生產中":"Confirm → In Production"}
+                      </button>
+                    </div>
+
+                    {activePO.status==="confirmed"&&(
+                      <div style={S.stepBox}>
+                        <div style={S.stepLabel}>{lang==="zh"?"工廠發貨":"Factory Ship"}</div>
+                        <input type="date" style={{...S.fin,marginTop:8,width:"100%"}}
+                          value={activePO.factoryShipDate||""}
+                          onChange={async e=>{
+                            const val=e.target.value;
+                            const updated={...activePO,factoryShipDate:val};
+                            setPurchaseOrders(p=>p.map(x=>x.id===activePO.id?updated:x));
+                            setActivePO(updated);
+                            await sb.upsert("purchase_orders",activePO.id,updated);
+                          }}/>
+                        {activePO.factoryShipDate&&<button style={{...S.pb,width:"100%",marginTop:8}} onClick={()=>updatePOSt(activePO.id,"shipped")}>{lang==="zh"?"確認已發貨":"Confirm Shipped"}</button>}
+                      </div>
+                    )}
+
+                    {activePO.status==="shipped"&&(
+                      <div style={S.stepBox}>
+                        <div style={S.stepLabel}>{lang==="zh"?"實際到貨日期":"Actual Arrival"}</div>
+                        <input type="date" style={{...S.fin,marginTop:8,width:"100%"}}
+                          value={activePO.actualArrivalDate||""}
+                          onChange={async e=>{
+                            const val=e.target.value;
+                            const updated={...activePO,actualArrivalDate:val};
+                            setPurchaseOrders(p=>p.map(x=>x.id===activePO.id?updated:x));
+                            setActivePO(updated);
+                            await sb.upsert("purchase_orders",activePO.id,updated);
+                          }}/>
+                        {activePO.actualArrivalDate&&<button style={{...S.pb,width:"100%",marginTop:8}} onClick={()=>updatePOSt(activePO.id,"arrived")}>{lang==="zh"?"確認已到貨":"Confirm Arrived"}</button>}
+                      </div>
+                    )}
+
+                    {activePO.status==="arrived"&&(
+                      <div style={{...S.stepBox,background:"#F0FDF4",borderColor:"#86EFAC"}}>
+                        <div style={{fontWeight:700,color:"#16A34A"}}>{lang==="zh"?"採購單已完成":"PO Completed"}</div>
+                        {activePO.actualArrivalDate&&<div style={{fontSize:12,color:"#888",marginTop:4}}>{lang==="zh"?"到貨：":"Arrived: "}{activePO.actualArrivalDate}</div>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
