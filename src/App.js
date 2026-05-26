@@ -715,7 +715,80 @@ ${po.supplierNote?`<div class="notes"><strong>特別備注:</strong><br>${po.sup
 };
 
 // PDF document generator (outside App)
+// PDF document generator (outside App)
 const genOrderPDFDoc = (order, lang, ptLabelFn, getSt, buildSpecRows, fmtHKD, NOW) => {
+  const sc = '\x3cscript\x3e';
+  const sc2 = '\x3c/script\x3e';
+  const specRows = buildSpecRows(order);
+  const st = getSt(order.status);
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+body{font-family:'Helvetica Neue',Arial,sans-serif;color:#111;margin:0;padding:30px;font-size:13px;}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #4361EE;}
+.doc-id{font-size:20px;font-weight:700;color:#4361EE;font-family:monospace;margin:4px 0;}
+.doc-date{font-size:11px;color:#888;}
+.section{margin-bottom:20px;}
+.section-title{font-size:9px;color:#4361EE;letter-spacing:3px;font-weight:700;text-transform:uppercase;border-bottom:1px solid #E8ECF4;padding-bottom:6px;margin-bottom:12px;}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.field-label{font-size:10px;color:#888;margin-bottom:2px;}
+.field-value{font-size:13px;font-weight:600;}
+.spec-table{width:100%;border-collapse:collapse;margin-top:8px;}
+.spec-table td{padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;}
+.spec-table td:first-child{color:#888;font-size:10px;letter-spacing:1px;text-transform:uppercase;width:35%;}
+.spec-table td:last-child{font-weight:600;}
+.price-section{background:#F8F9FF;border-radius:8px;padding:16px;margin-top:16px;}
+.price-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #E8ECF4;font-size:13px;}
+.price-total{display:flex;justify-content:space-between;padding:10px 0;font-weight:700;font-size:16px;color:#4361EE;}
+.footer{margin-top:32px;padding-top:16px;border-top:1px solid #E8ECF4;font-size:10px;color:#aaa;text-align:center;}
+@media print{body{padding:15px;} @page{margin:1cm;}}
+</style></head><body>
+<div class="header">
+  <div style="text-align:right;font-size:22px;font-weight:900;color:#4361EE;letter-spacing:3px">COVERSYNC<br><span style="font-size:11px;color:#888;font-weight:400;letter-spacing:1px">Y&D Trading House</span></div>
+  <div>
+    <div style="font-size:11px;color:#888;letter-spacing:2px;text-transform:uppercase">${lang==="zh"?"訂單詳情":"Order Details"}</div>
+    <div style="font-size:20px;font-weight:700;color:#4361EE;font-family:monospace;margin:4px 0">${order.id}</div>
+    <div style="font-size:11px;color:#888">${lang==="zh"?"訂單日期":"Order Date"}: ${order.orderDate||order.created||NOW}</div>
+    <div style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;margin-top:6px;background:${st.color}22;color:${st.color};border:1px solid ${st.color}44">${st.label}</div>
+  </div>
+</div>
+<div class="section">
+  <div class="section-title">${lang==="zh"?"客人資料":"Client Information"}</div>
+  <div class="grid">
+    <div><div class="field-label">${lang==="zh"?"客人姓名":"Name"}</div><div class="field-value">${order.client}</div></div>
+    <div><div class="field-label">${lang==="zh"?"電話":"Phone"}</div><div class="field-value">${order.phone}</div></div>
+    ${order.email?`<div><div class="field-label">Email</div><div class="field-value">${order.email}</div></div>`:""}
+    ${order.address?`<div style="grid-column:1/-1"><div class="field-label">${lang==="zh"?"地址":"Address"}</div><div class="field-value">${order.address}</div></div>`:""}
+  </div>
+</div>
+<div class="section">
+  <div class="section-title">${lang==="zh"?"車輛資料":"Vehicle"}</div>
+  <div class="grid">
+    <div><div class="field-label">${lang==="zh"?"車廠型號":"Make & Model"}</div><div class="field-value">${order.carMake} ${order.carModel||""}</div></div>
+    <div><div class="field-label">${lang==="zh"?"年份":"Year"}</div><div class="field-value">${order.carYear||"—"}</div></div>
+  </div>
+</div>
+<div class="section">
+  <div class="section-title">${lang==="zh"?"產品規格":"Product Specifications"}</div>
+  <div style="display:inline-block;background:#EEF1FF;color:#4361EE;border:1px solid #C5CEFF;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:700;margin-bottom:10px">${ptLabelFn(order.productType)}</div>
+  <table class="spec-table"><tbody>
+    ${specRows.map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join("")}
+    ${order.customDesignNote?`<tr><td>Custom Notes</td><td>${order.customDesignNote}</td></tr>`:""}
+  </tbody></table>
+</div>
+<div class="price-section">
+  <div class="section-title" style="border-color:#C5CEFF">${lang==="zh"?"付款詳情":"Payment"}</div>
+  <div class="price-row"><span>${lang==="zh"?"總金額":"Total"}</span><span style="font-weight:700">${fmtHKD(order.total)}</span></div>
+  <div class="price-row"><span>${lang==="zh"?"已付訂金":"Deposit"}</span><span style="color:#16A34A;font-weight:600">${fmtHKD(order.deposit)}</span></div>
+  <div class="price-total"><span>${lang==="zh"?"待收餘款":"Balance Due"}</span><span>${fmtHKD(order.total-order.deposit)}</span></div>
+  ${order.invoiceNo?`<div class="price-row"><span>Invoice No.</span><span style="font-family:monospace;font-weight:700">${order.invoiceNo}</span></div>`:""}
+  ${order.due?`<div class="price-row"><span>ETD</span><span>${order.due}</span></div>`:""}
+</div>
+${order.shipNo?`<div class="section" style="margin-top:16px"><div class="section-title">${lang==="zh"?"集運資料":"Shipping"}</div><div class="grid"><div><div class="field-label">${lang==="zh"?"集運單號":"Track No."}</div><div class="field-value" style="font-family:monospace">${order.shipNo}</div></div>${order.shipDate?`<div><div class="field-label">${lang==="zh"?"發貨日期":"Ship Date"}</div><div class="field-value">${order.shipDate}</div></div>`:""}</div></div>`:""}
+${order.notes?`<div class="section" style="margin-top:16px"><div class="section-title">${lang==="zh"?"備注":"Notes"}</div><div style="background:#FFFBF0;border:1px solid #FFE099;border-radius:6px;padding:12px;font-size:13px">${order.notes}</div></div>`:""}
+<div class="footer">COVERSYNC · Y&D Trading House · ${NOW}</div>
+</body></html>`;
+};
+
 const genOrderPDF = (order) => {
   const sc = '\x3cscript\x3e';
   const sc2 = '\x3c/script\x3e';
