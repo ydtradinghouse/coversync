@@ -1293,6 +1293,8 @@ ${po.supplierNote?`<div class="notes"><strong>特別備注 Special Notes:</stron
 
   // PDF order - opens in new window, can save as PDF
   const genOrderPDF = (order) => {
+    const sc = '\x3cscript\x3e';
+    const sc2 = '\x3c/script\x3e';
     const specRows = buildSpecRows(order);
     const st = getSt(order.status);
     return `<!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -1325,7 +1327,7 @@ ${po.supplierNote?`<div class="notes"><strong>特別備注 Special Notes:</stron
   .etd-alert{background:#FFF5F5;border:1px solid #FFCCCC;border-radius:6px;padding:8px 12px;font-size:11px;color:#E84B4B;font-weight:700;margin-top:8px;}
   @media print{body{padding:15px;} @page{margin:1cm;}}
 </style>
-<script>window.onload=function(){if(navigator.share){document.getElementById('sharebtn').style.display='block';}}</script>
+${sc}window.onload=function(){if(navigator.share){document.getElementById('sharebtn').style.display='block';}}${sc2}
 </head><body>
 <div class="header">
   <div class="doc-info" style="text-align:left">
@@ -1390,14 +1392,14 @@ ${order.notes?`<div class="section" style="margin-top:16px"><div class="section-
 <div style="text-align:center;margin-top:16px;display:none" id="sharebtn">
   <button onclick="navigator.share({title:'Order ${order.id}',text:'COVERSYNC Order Details',url:window.location.href})" style="background:#4361EE;color:#fff;border:none;border-radius:8px;padding:12px 24px;font-size:14px;font-weight:700;cursor:pointer">Share / Save PDF</button>
 </div>
-<script>
+${sc}
   // Auto-prompt save as PDF on mobile
   setTimeout(function(){
     if(/iPhone|iPad|Android/i.test(navigator.userAgent)){
       document.getElementById('sharebtn').style.display='block';
     }
   },500);
-</script>
+${sc2}
 </body></html>`;
   };
 
