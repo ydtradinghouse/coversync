@@ -2032,7 +2032,6 @@ COVERSYNC
                   </button>
                 ))}
               </div>
-              </div>
 
               {/* Product type filter */}
               <div style={{...S.fg,marginBottom:14}}>
