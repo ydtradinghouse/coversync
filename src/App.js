@@ -1591,9 +1591,10 @@ COVERSYNC
             </div>
           )}
 
-          {orderView==="detail" && activeOrder && (
+          {orderView==="detail" && activeOrder && (()=>{
+            try { return (
             <div style={S.page}>
-              <button style={S.bb} onClick={()=>{setShowWA(false);setOrderView("list");}}>{t.backList}</button>
+              <button style={S.bb} onClick={()=>{setShowWA(false);setOrderView("list");setActiveOrder(null);}}>{t.backList}</button>
               <div style={S.dl}>
                 <div>
                   <div style={S.dc}>
@@ -1992,7 +1993,15 @@ COVERSYNC
                 </div>
               </div>
             </div>
-          )}
+            ); } catch(e) { return (
+              <div style={S.page}>
+                <button style={S.bb} onClick={()=>{setOrderView("list");setActiveOrder(null);}}>{t.backList}</button>
+                <div style={{padding:40,textAlign:"center",color:"#E84B4B"}}>
+                  <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>顯示錯誤</div>
+                  <div style={{fontSize:13,color:"#888"}}>訂單 {activeOrder?.id} 資料有問題，請返回列表</div>
+                </div>
+              </div>
+            ); } })()}
         </>}
 
         {/* ════════ BULK ════════ */}
