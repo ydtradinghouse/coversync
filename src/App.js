@@ -12,7 +12,13 @@ const sb = {
       headers: { apikey: SUPABASE_KEY }
     });
     const data = await r.json();
-    return Array.isArray(data) ? data.map(row => row.data || row) : [];
+    return Array.isArray(data) ? data.map(row => {
+  const d = row.data || row;
+  if (typeof d === 'string') {
+    try { return JSON.parse(d); } catch(e) { return row; }
+  }
+  return d;
+}) : [];
   },
   async upsert(table, id, data) {
     await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
